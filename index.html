@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NORTHSOUL — DJ &amp; Artist</title>
+  <meta name="description" content="NORTHSOUL — DJ & Artist, born and raised in Tangier, Morocco. Afro House, Afro Tech, House and Open Format. Performances at Istar Madrid, Los Amantes Madrid, M Beach Cabo Negro, Kabana Marrakech, La Nuit Paris and Noah Casablanca.">
+  <meta name="theme-color" content="#ffffff">
+  <meta property="og:title" content="NORTHSOUL — DJ & Artist">
+  <meta property="og:description" content="Born and raised in Tangier, Morocco. He doesn't simply play music — he creates an atmosphere.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230d0d0d'/%3E%3Ctext x='16' y='23' font-family='Arial Black,Arial,sans-serif' font-size='19' font-weight='900' text-anchor='middle' fill='%23ffffff'%3EN%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@300..600&family=Instrument+Serif&family=Archivo:wdth,wght@125,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="is-loading">
+
+  <!-- ===================== SPLASH: two doors, "North" | "Soul" — one scroll opens them onto the hero ===================== -->
+  <div class="splash is-pre" id="splash" role="region" aria-label="NORTHSOUL — DJ and producer">
+    <div class="splash__door splash__door--l" id="doorL"><span class="splash__word"><span id="splashA"></span></span></div>
+    <div class="splash__door splash__door--r" id="doorR"><span class="splash__word"><span id="splashB"></span></span></div>
+    <button class="splash__enter" id="splashEnter">Scroll to discover</button>
+  </div>
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="hdr is-dark" id="hdr">
+    <a class="logo" href="#top" aria-label="NORTHSOUL — home">NORTHSOUL</a>
+    <button class="menu-btn mono" id="menuBtn" aria-expanded="false" aria-controls="menu">
+      <span class="menu-btn__label"><span>Menu</span><span>Close</span></span>
+      <span class="menu-btn__icon"><i></i><i></i></span>
+    </button>
+  </header>
+
+  <!-- ===================== MENU (3D ring) ===================== -->
+  <div class="menu" id="menu" aria-hidden="true">
+    <div class="menu__stage"><div class="menu__ring" id="ring"></div></div>
+    <nav class="menu__nav" id="menuNav" aria-label="Main"></nav>
+    <div class="menu__foot mono">
+      <a id="menuMail" href="#"></a>
+      <span id="menuSocials"></span>
+    </div>
+  </div>
+
+  <main id="main">
+
+    <!-- ===================== ENTRY (slit-scan slideshow → manifesto) ===================== -->
+    <section class="hero" id="top" aria-label="NORTHSOUL">
+      <div class="hero__sticky">
+        <div class="hero__frame" id="heroFrame">
+          <div class="hero__inner" id="heroInner"><canvas class="hero__gl" id="slidesGl"></canvas></div>
+        </div>
+
+        <div class="entry mono on-dark" id="entry">
+          <div class="entry__label"><span id="slideKind"></span><span class="entry__title" id="slideTitle"></span></div>
+          <div class="entry__role" id="entryRole"></div>
+          <div class="entry__row">
+            <span class="entry__time" id="entryTime"></span>
+            <span class="entry__scroll" id="entryScroll">Scroll to discover <i></i></span>
+            <a class="entry__book" href="#booking">Book</a>
+          </div>
+        </div>
+
+        <h1 class="hero__word on-dark" id="heroWord" aria-label="NORTHSOUL">NORTHSOUL</h1>
+
+        <div class="manifesto" id="manifesto" aria-hidden="true"></div>
+        <p class="manifesto__kicker mono" id="kicker"></p>
+      </div>
+    </section>
+
+    <!-- ===================== INTRO / CASCADE ===================== -->
+    <section class="intro" id="intro">
+      <div class="intro__sticky">
+        <div class="cascade" id="cascade" aria-hidden="true"><div class="cascade__field" id="cascadeField"></div></div>
+        <div class="intro__copy">
+          <p class="intro__text" id="introText"></p>
+          <a class="pill" id="introLink" href="#artist"><span></span><i class="pill__icon">+</i></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== THE ARTIST (one portrait) ===================== -->
+    <section class="artist" id="artist" aria-label="The artist">
+      <div class="artist__media">
+        <div class="artist__img" id="artistImg"></div>
+        <div class="artist__hud mono"><span>Tangier, Morocco</span><span>DJ &amp; Artist</span></div>
+      </div>
+      <div class="artist__copy">
+        <h2 class="artist__title" id="artistTitle"></h2>
+        <div class="artist__bio" id="artistBio"></div>
+        <dl class="facts" id="artistFacts"></dl>
+      </div>
+    </section>
+
+    <!-- ===================== THE SOUND (WebGL chapters) ===================== -->
+    <section class="sound" id="sound" aria-label="The sound">
+      <div class="sound__sticky">
+        <canvas class="sound__gl" id="soundGl"></canvas>
+        <div class="sound__fallback" id="soundFallback"></div>
+        <div class="sound__ui on-dark">
+          <div class="sound__labels" id="soundLabels"></div>
+          <div class="sound__bar" id="soundBar"><i class="sound__head" id="soundHead"></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PAST EVENTS: a curved carousel of the nights, turned by the scroll ===================== -->
+    <section class="flow" id="archive" aria-label="Past events">
+      <div class="flow__stage on-dark">
+        <header class="flow__head">
+          <h2 class="flow__title" id="flowTitle"></h2>
+          <p class="flow__sub" id="flowSub"></p>
+          <p class="flow__note mono"><i></i><span id="flowNote"></span></p>
+        </header>
+        <div class="flow__ring" id="flowRing"></div>
+        <div class="flow__nav mono">
+          <button class="flow__arrow" id="flowPrev" type="button" aria-label="Previous night">←</button>
+          <span>Swipe or drag sideways</span>
+          <button class="flow__arrow" id="flowNext" type="button" aria-label="Next night">→</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== NEXT EVENT ===================== -->
+    <!-- the next night is a record: it slides out of its sleeve, the arm drops, the film plays on the disc -->
+    <section class="next on-dark" id="next" aria-label="Next event">
+      <div class="next__stage">
+        <div class="next__top mono"><span class="next__now" id="nextNow">Cueing up</span><span id="nextCity"></span></div>
+
+        <div class="deck" id="deck">
+          <div class="disc" id="disc">
+            <div class="disc__film" id="discFilm"></div>
+            <div class="disc__grooves" aria-hidden="true"></div>
+            <div class="disc__label" id="discLabel" aria-hidden="true">
+              <svg viewBox="0 0 200 200"><defs><path id="labelPath" d="M100,100 m-74,0 a74,74 0 1,1 148,0 a74,74 0 1,1 -148,0"/></defs><text><textPath href="#labelPath" id="labelText"></textPath></text></svg>
+              <span class="disc__day" id="discDay"></span>
+            </div>
+            <i class="disc__sheen" aria-hidden="true"></i>
+          </div>
+          <div class="sleeve" id="sleeve" aria-hidden="true">
+            <div class="sleeve__photo" id="sleevePhoto"></div>
+            <span class="sleeve__brand mono">NORTHSOUL</span>
+            <span class="sleeve__title" id="sleeveTitle"></span>
+            <span class="sleeve__side mono">Side A</span>
+          </div>
+          <div class="arm" id="arm" aria-hidden="true">
+            <svg viewBox="0 0 120 420">
+              <circle cx="60" cy="40" r="30" class="arm__base"/>
+              <rect x="48" y="2" width="24" height="16" rx="3" class="arm__weight"/>
+              <path d="M60 40 L60 330 L44 372" class="arm__tube"/>
+              <rect x="28" y="362" width="30" height="40" rx="4" transform="rotate(20 43 382)" class="arm__head"/>
+              <circle cx="60" cy="40" r="9" class="arm__pivot"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="next__info">
+          <div class="next__date" id="nextDate"></div>
+          <h2 class="next__title" id="nextTitle"></h2>
+          <div class="next__meta mono"><span id="nextVenue"></span><span id="nextDoors"></span></div>
+          <div class="next__cta">
+            <a class="next__btn" id="nextTickets" href="#"><span>Get tickets</span><i>→</i></a>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== FRAMES (B&W gallery) ===================== -->
+    <section class="frames" id="frames" aria-label="Frames">
+      <div class="wrap">
+        <div class="sec-head sec-head--center">
+          <h2 class="title-xl" id="framesTitle">Moments from <em>the booth</em></h2>
+        </div>
+      </div>
+      <div class="frames__grid" id="framesGrid"></div>
+    </section>
+
+    <!-- ===================== PRESS KIT (contact sheet + download) ===================== -->
+    <section class="press" id="press" aria-label="Press kit">
+      <div class="wrap">
+        <div class="press__top">
+          <div class="press__intro">
+            <h2 class="press__title" id="pressTitle"></h2>
+            <p class="press__text" id="pressText"></p>
+          </div>
+          <div class="press__get">
+            <a class="press__zip" id="pressZip" href="#">
+              <span class="press__zip-k mono">For promoters</span>
+              <span class="press__zip-t" id="pressZipLabel"></span>
+              <span class="press__zip-m mono" id="pressZipMeta"></span>
+              <i class="press__zip-i" aria-hidden="true"><span>↓</span></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== TRUSTED BY (venue logos light up like club signs) ===================== -->
+    <section class="trusted" id="trusted" aria-label="Trusted by">
+      <div class="wrap">
+        <h2 class="trusted__title" id="trustedTitle"></h2>
+        <ul class="trusted__grid" id="trustedGrid"></ul>
+      </div>
+    </section>
+
+    <!-- ===================== BOOKING (direct: mail · WhatsApp · call) ===================== -->
+    <section class="contact" id="booking" aria-label="Booking">
+      <div class="wrap">
+        <div class="contact__top mono">
+          <span class="contact__time" id="contactTime"></span>
+        </div>
+        <div class="contact__lead">
+          <h2 class="contact__title" id="bookTitle"></h2>
+          <p class="contact__intro" id="bookIntro"></p>
+        </div>
+        <ul class="lines" id="contactLines"></ul>
+        <div class="contact__more mono">
+          <a id="contactMgmt" href="#"></a>
+          <div class="contact__socials" id="socials"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="ftr" id="ftr">
+    <div class="ftr__reel" id="ftrReel">
+      <div class="ftr__word" id="ftrWord" aria-hidden="true"></div>
+    </div>
+    <div class="ftr__bar mono">
+      <span>© <span id="year"></span> NORTHSOUL</span>
+      <span id="localTime"></span>
+      <a href="#top" id="toTop">Back to top ↑</a>
+    </div>
+  </footer>
+
+  <!-- ===================== OVERLAYS ===================== -->
+  <div class="lightbox on-dark" id="lightbox" role="dialog" aria-modal="true" aria-hidden="true">
+    <button class="lightbox__close mono" id="lbClose">Close ✕</button>
+    <div class="lightbox__media" id="lbMedia"></div>
+    <div class="lightbox__cap mono" id="lbCap"></div>
+  </div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <script src="vendor/gsap.min.js"></script>
+  <script src="vendor/ScrollTrigger.min.js"></script>
+  <script src="vendor/SplitText.min.js"></script>
+  <script src="vendor/lenis.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
