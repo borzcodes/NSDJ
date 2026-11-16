@@ -22,13 +22,15 @@ uniform float uZA, uZB;
 uniform float uT, uTime, uCx, uSeed, uBeat;
 
 float hash(float n){ return fract(sin(n * 12.9898 + 78.233) * 43758.5453123); }
+// textures go up the way the files are stored (top row first), so the picture is flipped here, for free
+vec4 tx(sampler2D t, vec2 c){ return texture2D(t, vec2(c.x, 1.0 - c.y)); }
 
 // full-screen cover-fit that keeps the focus point (the DJ) in frame
 vec2 cover(vec2 uv, vec2 tex, vec2 focus, float zoom){
   float rs = uRes.x / uRes.y, rt = tex.x / tex.y;
   vec2 s = rs > rt ? vec2(1.0, rt / rs) : vec2(rs / rt, 1.0);
   vec2 room = max(1.0 - s / zoom, 0.0);
-  vec2 f = vec2(focus.x, 1.0 - focus.y);           // textures are flipped on upload
+  vec2 f = vec2(focus.x, 1.0 - focus.y);           // focus is measured from the top, uv from the bottom
   return clamp((uv - 0.5) * s / zoom + 0.5 + (f - 0.5) * room, 0.001, 0.999);
 }
 
@@ -53,8 +55,8 @@ void main(){
   float jit = (hash(colF + uSeed + step12) - 0.5) * 0.09 * pulse;
   float inB = step(dx, w + jit);
 
-  vec3 a = texture2D(uA, cover(uv, uSA, uFA, uZA)).rgb;
-  vec3 b = texture2D(uB, cover(uv, uSB, uFB, uZB)).rgb;
+  vec3 a = tx(uA, cover(uv, uSA, uFA, uZA)).rgb;
+  vec3 b = tx(uB, cover(uv, uSB, uFB, uZB)).rgb;
 
   // outgoing shot burns as the wave gets close
   float near = smoothstep(0.24, 0.0, dx - w) * smoothstep(0.0, 0.2, t);
@@ -72,8 +74,8 @@ void main(){
   float colX = barT > 0.5 ? (cT + 0.5) / nT : (cW + 0.5) / nW;
   float pick = barT > 0.5 ? hash(cT + 9.1 + uSeed) : hash(cW + 2.3 + uSeed);
   vec2 colUv = vec2(colX, 0.5 + (uv.y - 0.5) * 0.12);
-  vec3 slitB = texture2D(uB, cover(colUv, uSB, uFB, uZB)).rgb;
-  vec3 slitA = solarize(texture2D(uA, cover(colUv, uSA, uFA, uZA)).rgb);
+  vec3 slitB = tx(uB, cover(colUv, uSB, uFB, uZB)).rgb;
+  vec3 slitA = solarize(tx(uA, cover(colUv, uSA, uFA, uZA)).rgb);
   vec3 slit = mix(slitB, slitA, step(0.7, pick));
   col = mix(col, slit, max(barT, barW));
 
@@ -87,6 +89,25 @@ void main(){
   col += (hash(dot(uv * uRes, vec2(1.0, 57.0)) + fract(uTime) * 61.0) - 0.5) * 0.045;
   gl_FragColor = vec4(col, 1.0);
 }`;
+
+/** A photo, decoded in the background and ready for the GPU (null until it is). Handing WebGL a plain
+    <img> makes the browser decode the whole JPEG in the middle of a frame, which freezes the page.
+    The bitmap is made from the file's bytes (already in the browser's cache): made from the <img>
+    itself, Chrome decodes it on the main thread anyway. */
+const bitmaps = new WeakMap();
+export function decoded(img) {
+  if (!img.complete || !img.naturalWidth) return null;
+  if (typeof createImageBitmap !== 'function') return img;
+  if (!bitmaps.has(img)) {
+    bitmaps.set(img, null);
+    fetch(img.currentSrc || img.src, { cache: 'force-cache' })      // the copy the <img> already downloaded
+      .then(r => (r.ok ? r.blob() : Promise.reject(r.status)))
+      .then(b => createImageBitmap(b))
+      .catch(() => createImageBitmap(img))
+      .then(b => bitmaps.set(img, b), () => bitmaps.set(img, img));
+  }
+  return bitmaps.get(img);
+}
 
 export class Slides {
   /**
@@ -124,7 +145,6 @@ export class Slides {
       .forEach(n => (this.u[n] = gl.getUniformLocation(p, n)));
     gl.uniform1i(this.u.uA, 0);
     gl.uniform1i(this.u.uB, 1);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
     this.base = this.solid(base);
     this.tex = slides.map(s => this.makeTex(s));
@@ -165,13 +185,21 @@ export class Slides {
 
   upload(t, el) {
     const gl = this.gl;
-    const ok = el instanceof HTMLVideoElement ? el.readyState >= 2
-      : el instanceof HTMLImageElement ? el.complete && el.naturalWidth > 0 : true;
-    if (!ok) return false;
+    let data = el;
+    if (el instanceof HTMLVideoElement) { if (el.readyState < 2) return false; }
+    else if (el instanceof HTMLImageElement) { data = decoded(el); if (!data) return false; }
     gl.bindTexture(gl.TEXTURE_2D, t);
-    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el); } catch (e) { return false; }
+    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data); } catch (e) { return false; }
     if (t.src && el === t.src.el) t.live = true;
+    t.has = true;                 // something real is on this texture (the photo, or the film's still)
     return true;
+  }
+
+  /** the next shot, from i on, that has arrived (-1 if none other has yet) */
+  nextReady(i) {
+    const n = this.slides.length;
+    for (let d = 0; d < n; d++) { const k = (i + d) % n; if (k !== this.cur && this.tex[k].has) return k; }
+    return -1;
   }
 
   sizeOf(t) {
@@ -185,9 +213,11 @@ export class Slides {
 
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    this.canvas.width = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
-    this.canvas.height = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
-    this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    const w = Math.max(1, Math.round(this.canvas.clientWidth * dpr)), h = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
+    if (w === this.canvas.width && h === this.canvas.height) return;   // resizing a canvas wipes it: only when needed
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.gl.viewport(0, 0, w, h);
   }
 
   go(i) {
@@ -209,7 +239,8 @@ export class Slides {
       if (this.t >= 1) { this.cur = this.next; this.transitioning = false; this.held = 0; this.t = 0; }
     } else if (this.cur >= 0) {
       this.held += dt;
-      if (this.held > this.hold) this.go(this.cur + 1);
+      // move on only to a shot that has arrived (on a slow connection the current one simply holds longer)
+      if (this.held > this.hold) { const n = this.nextReady(this.cur + 1); if (n >= 0) this.go(n); }
     }
   }
 
@@ -219,10 +250,17 @@ export class Slides {
     const gl = this.gl, u = this.u;
     const ia = this.cur, ib = this.transitioning ? this.next : this.cur;
     // keep only the films on screen running
+    const now = performance.now();
     this.tex.forEach((t, k) => {
       const s = t.src;
-      if (!s.isVideo) { if (!t.live) this.upload(t, s.el); return; }
-      const on = this.active && (k === ia || k === ib);
+      const shown = k === ia || k === ib;
+      // photos go up one at a time, at most one every 100 ms (each costs the page a few ms), the shot on screen first
+      if (!s.isVideo) {
+        if (!t.live && (shown ? !t.has : now - (this.lastUp || 0) > 100) && this.upload(t, s.el)) this.lastUp = now;
+        return;
+      }
+      if (!t.live && !t.has && s.poster) this.upload(t, s.poster);     // the still, until the film has frames
+      const on = this.active && shown;
       if (on) { if (s.el.paused) s.el.play().catch(() => {}); this.upload(t, s.el); }
       else if (!s.el.paused) s.el.pause();
     });

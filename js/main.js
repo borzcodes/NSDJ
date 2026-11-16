@@ -64,22 +64,21 @@ function scramble(node, text, ms = 520) {
 
 /* ---------- media ---------- */
 // Real photos/videos from content.js win; otherwise a procedural placeholder canvas is used.
-async function resolve(m = {}, w = 1280, h = 800) {
-  if (m.video) return { type: 'video', src: m.video, poster: m.img || null, w: m.w, h: m.h, fx: m.fx, fy: m.fy };
-  if (m.img) return { type: 'img', src: m.img, full: m.full, w: m.w, h: m.h, fx: m.fx, fy: m.fy };
+// use: 'big' (default), 'small' = a small tile (light copies only), 'grid' = a grid cell (the browser picks
+// the light copy or the 1600 px one, by screen; give mediaNode `sizes`)
+async function resolve(m = {}, w = 1280, h = 800, use = 'big') {
+  const light = use !== 'big' && m.thumb;
+  if (m.video) return { type: 'video', src: filmFor(m), poster: (light ? m.thumb : m.img) || null, w: m.w, h: m.h, fx: m.fx, fy: m.fy };
+  if (m.img) {
+    if (use === 'grid' && m.thumb) return { type: 'img', src: m.thumb, thumb: m.thumb, light: m.img, w: m.w, h: m.h, fx: m.fx, fy: m.fy };
+    return { type: 'img', src: light ? m.thumb : m.img, full: light ? null : m.full, w: m.w, h: m.h, fx: m.fx, fy: m.fy };
+  }
   return { type: 'canvas', canvas: placeholder(m.scene || 'club', m.seed ?? 1, w, h) };
 }
 /** width / height of a media item (from content.js), or a fallback */
 const aspect = (m, fallback = 2 / 3) => (m && m.w && m.h ? m.w / m.h : fallback);
 /** where the DJ is in a media item, [x, y] 0..1 — the crop keeps this point in view */
 const focusOf = m => [m?.fx ?? 0.5, m?.fy ?? 0.5];
-/** full-screen use (hero): the 4K file whenever the screen draws the photo bigger than the 1600 px copy */
-const sharpest = m => {
-  if (!m.full || !m.w || !m.h) return m.img;
-  const dpr = devicePixelRatio || 1;
-  const shown = Math.max(m.w, m.h) * Math.max((innerWidth * dpr) / m.w, (innerHeight * dpr) / m.h);
-  return shown > 1680 ? m.full : m.img;
-};
 
 /**
  * @param sizes  only for images drawn large (portrait, interlude, lightbox): how wide they are drawn,
@@ -104,24 +103,27 @@ function mediaNode(r, { autoplay = false, controls = false, poster = false, size
     return v;
   }
   const i = new Image();
+  const widthAt = edge => Math.round(r.w * Math.min(1, edge / Math.max(r.w, r.h)));
   if (sizes && r.full && r.w && r.h) {
-    const webW = Math.round(r.w * Math.min(1, 1600 / Math.max(r.w, r.h)));
+    const webW = widthAt(1600);
     if (r.w > webW) { i.sizes = sizes; i.srcset = `${r.src} ${webW}w, ${r.full} ${r.w}w`; }
+  } else if (sizes && r.thumb && r.light && r.w && r.h) {
+    i.sizes = sizes; i.srcset = `${r.thumb} ${widthAt(800)}w, ${r.light} ${widthAt(1600)}w`;
   }
   if (r.fx != null) i.style.objectPosition = `${r.fx * 100}% ${r.fy * 100}%`;
   i.src = r.src; i.alt = ''; i.decoding = 'async'; i.draggable = false;
+  // decode it as soon as it has arrived, so it is ready before it comes on screen (no hitch the first time)
+  i.addEventListener('load', () => i.decode?.().catch(() => {}), { once: true });
   return i;
 }
 /** CSS width a cover-fitted photo is really drawn at inside a box (for picking the 4K file) */
 const coverSizes = (m, boxW, boxH) => `${Math.round(Math.max(boxW, boxH * aspect(m, 2 / 3)))}px`;
-const loadImg = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(i); i.src = src; });
-const videoReady = (v, ms = 5000) => new Promise(res => {
-  if (v.readyState >= 2) return res();
-  const done = () => { clearTimeout(t); res(); };
-  const t = setTimeout(done, ms);
-  v.addEventListener('loadeddata', done, { once: true });
-  v.addEventListener('error', done, { once: true });
-});
+/** the film file for this screen: 1080p on desktop, 720p on phones */
+const filmFor = m => (mobile() && m.video720) || m.video;
+/** an image that starts loading now; nothing waits for it (the WebGL scenes pick it up once it has arrived) */
+const img = (src, priority) => { const i = new Image(); i.decoding = 'async'; if (priority) i.fetchPriority = priority; i.src = src; return i; };
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const loaded = i => (!(i instanceof HTMLImageElement) || i.complete ? Promise.resolve(i) : new Promise(res => { i.addEventListener('load', () => res(i), { once: true }); i.addEventListener('error', () => res(i), { once: true }); }));
 
 /* ==========================================================================
    STATE
@@ -131,7 +133,7 @@ let lenis;
 const S = {
   mouse: { x: innerWidth / 2, y: innerHeight / 2, nx: 0.5, ny: 0.5 },
   hero: { active: true, slides: null },
-  intro: { active: false, tiles: [], videos: [], p: 0, rx: 0, ry: 0 },
+  intro: { active: false, tiles: [], p: 0, rx: 0, ry: 0 },
   sound: { active: false, liquid: null, target: 0, g: 0, cur: -1 },
   archive: { cards: [], target: 0, cur: 0, front: -1, active: false },
   next: { videos: [], date: null },
@@ -242,23 +244,28 @@ function enterSite() {
    ========================================================================== */
 async function buildHero() {
   const inner = $('#heroInner');
-  const sources = await Promise.all(SLIDES.map(async (s, i) => {
+  // nothing here waits for the network: the photos arrive while the first shot plays
+  // (the slideshow only moves on to a shot once it has arrived)
+  const sources = SLIDES.map((s, i) => {
     const m = s.media;
     if (m.video) {
-      // true 4K on big high-density screens, Full HD everywhere else
-      const big = innerWidth * (devicePixelRatio || 1) >= 2400 && !navigator.connection?.saveData;
-      const v = mediaNode({ type: 'video', src: big && m.video4k ? m.video4k : m.video, poster: m.img });
-      v.preload = i === 0 ? 'auto' : 'metadata';
+      const v = mediaNode({ type: 'video', src: filmFor(m) });    // hidden under the canvas: the canvas shows the still
+      v.preload = 'none';
       v.classList.add('hero__src');      // stays under the canvas so the browser keeps decoding it
       inner.prepend(v);
-      if (i === 0) { v.play().catch(() => {}); await videoReady(v, 4000); }
-      const poster = m.img ? await loadImg(m.img) : null;
-      return { el: v, isVideo: true, poster, focus: focusOf(m) };
+      return { el: v, isVideo: true, poster: m.img ? img(m.img, i === 0 ? 'high' : 'low') : null, focus: focusOf(m) };
     }
-    if (m.img) return { el: await loadImg(sharpest(m)), focus: focusOf(m) };
-    const r = await resolve(m, 1600, 1000);
-    return { el: r.canvas, focus: focusOf(m) };
-  }));
+    // the 1600 px copies: the slideshow canvas is drawn at no more than 1.5× the screen, so they hold up,
+    // and swapping in the 4K files froze common laptops for most of a second per photo
+    if (m.img) { const p = new Image(); p.decoding = 'async'; return { el: p, later: m.img, focus: focusOf(m) }; }
+    return { el: placeholder(m.scene || 'club', m.seed ?? 1, 1600, 1000), focus: focusOf(m) };
+  });
+  // the doors open as soon as the first shot can be shown: its light still gets the connection to itself
+  const first = sources[0];
+  await Promise.race([loaded(first.poster || first.el), wait(2500)]);
+  // then the first film, then the other photos (the slideshow only needs them a few seconds later)
+  if (first.isVideo) { first.el.preload = 'auto'; first.el.play().catch(() => {}); }
+  sources.forEach(s => { if (s.later) s.el.src = s.later; });
   try {
     S.hero.slides = new Slides($('#slidesGl'), sources, { hold: 3.4, dur: 1.45, onChange: setSlideLabel });
     S.hero.slides.active = true;
@@ -315,27 +322,29 @@ async function buildIntro() {
   const rnd = mulberry(4);
   for (let i = 0; i < N; i++) {
     const m = pool[i % pool.length];
-    const r = await resolve(m, 480, 640);
+    // the tiles are small and fly past, so a clip shows its still here: a dozen films starting together
+    // as the collage comes in made the scroll stutter (and phones can only decode a few at once)
+    const r = await resolve(m.video ? { img: m.thumb || m.img, w: m.w, h: m.h, fx: m.fx, fy: m.fy } : m, 480, 640, 'small');
     const t = el('div', 'cas-tile');
     const node = mediaNode(r);
-    if (node.tagName === 'IMG') node.loading = 'lazy';
-    if (node.tagName === 'VIDEO') { node.preload = 'none'; S.intro.videos.push(node); }
+    node.loading = 'lazy';
     t.append(node);
     field.append(t);
     const u = i / (N - 1);
     let x = lerp(-1.2, 1.2, rnd()) * 0.5;
     let y = (x * 0.5) + (rnd() - 0.5) * 0.6;
     if (Math.abs(x) < 0.18 && Math.abs(y) < 0.16) x += Math.sign(x || 1) * 0.24;
-    const ar = node.tagName === 'VIDEO' ? 9 / 16 : 2 / 3;
+    const ar = m.video ? 9 / 16 : 2 / 3;
     S.intro.tiles.push({ el: t, x, y, ar, z0: lerp(-3800, 300, (u + rnd() * 0.1) % 1), w: lerp(140, 250, rnd()) });
   }
 }
 
 async function buildArtist() {
   const r = await resolve(ARTIST.portrait, 900, 1200);
-  const img = mediaNode(r, { sizes: mobile() ? coverSizes(ARTIST.portrait, innerWidth, innerHeight * 0.78) : coverSizes(ARTIST.portrait, innerWidth / 2, innerHeight) });
-  img.alt = `${SITE.artist} portrait`;
-  $('#artistImg').append(img);
+  const pic = mediaNode(r, { sizes: mobile() ? coverSizes(ARTIST.portrait, innerWidth, innerHeight * 0.78) : coverSizes(ARTIST.portrait, innerWidth / 2, innerHeight) });
+  pic.alt = `${SITE.artist} portrait`;
+  pic.loading = 'lazy';      // arrives as the section comes near, not while the opening plays
+  $('#artistImg').append(pic);
   const t = $('#artistTitle');
   t.append(document.createTextNode(ARTIST.title[0]), el('em', null, ARTIST.title[1]));
   t.classList.add('split');
@@ -348,18 +357,21 @@ async function buildArtist() {
 async function buildSound() {
   const fb = $('#soundFallback');
   const wide = !portrait();
+  // nothing downloads yet: the films start loading one screen before the section (see soundScene),
+  // and each chapter shows its still until its film has frames
   const source = async (m, main) => {
     if (!m) return null;
     if (m.video) {
-      const v = mediaNode({ type: 'video', src: m.video, poster: m.img });
-      v.preload = main ? 'auto' : (wide ? 'metadata' : 'none');
+      const v = mediaNode({ type: 'video', src: main ? filmFor(m) : m.video, poster: m.img });
+      v.preload = 'none';
       if (main) v.classList.add('fb-main');
       fb.append(v);   // kept in the DOM (under the canvas) so the browser keeps decoding it
-      const poster = m.img ? await loadImg(m.img) : null;
-      return { el: v, isVideo: true, poster, focus: focusOf(m) };
+      // the still only shows for the moment before the film has frames (under the melt), so the light 640 px
+      // copy does: fifteen full-size stills going onto the GPU made the page stutter as the section came near
+      return { el: v, isVideo: true, poster: (main || wide) && (m.thumb || m.img) ? img(m.thumb || m.img) : null, focus: focusOf(m) };
     }
     const r = await resolve(m, 1440, 900);
-    const node = r.type === 'canvas' ? r.canvas : await loadImg(r.src);
+    const node = r.type === 'canvas' ? r.canvas : img(r.src);
     const shown = r.type === 'canvas' ? copyCanvas(r.canvas) : node.cloneNode();
     if (main) shown.classList.add('fb-main');
     fb.append(shown);
@@ -384,6 +396,9 @@ async function buildSound() {
   CHAPTERS.forEach(() => { const s = el('div', 'seg'); s.append(el('b')); bar.insertBefore(s, $('#soundHead')); });
   try {
     S.sound.liquid = new Liquid($('#soundGl'), chapters);
+    // draw it once now, behind the opening screen: the graphics driver finishes preparing the effect on its
+    // first draw, which otherwise froze the page for a moment as you scrolled into the section
+    S.sound.liquid.render(0);
   } catch (e) {
     console.warn('WebGL fallback', e);
     document.documentElement.classList.add('no-webgl');
@@ -403,7 +418,7 @@ async function buildArchive() {
     const card = el('article', 'fcard');
     const media = el('div', 'fcard__media');
     const node = mediaNode(r);
-    if (node.tagName === 'VIDEO') node.preload = i < 2 ? 'auto' : 'metadata';
+    if (node.tagName === 'VIDEO') node.preload = 'none';   // the cards near the front start loading as the section comes near
     media.append(node);
     const foot = el('div', 'fcard__foot');
     foot.append(el('h3', 'fcard__title', ev.title));
@@ -457,11 +472,11 @@ async function buildFrames() {
   const colEls = Array.from({ length: cols }, () => { const c = el('div', 'fr-col'); grid.append(c); return c; });
   const ratios = ['4 / 5', '1 / 1', '3 / 4', '4 / 5', '5 / 6'];
   for (const [i, f] of FRAMES.entries()) {
-    const r = await resolve(f.media, 600, 750);
+    const r = await resolve(f.media, 600, 750, 'grid');
     const fig = el('figure', 'fr-item');
     const m = el('div', 'fr-item__media');
     m.style.aspectRatio = ratios[i % ratios.length];
-    const node = mediaNode(r);
+    const node = mediaNode(r, { sizes: `${Math.ceil(innerWidth / cols)}px` });   // light copy unless the screen needs more
     if (node.tagName === 'IMG') node.loading = 'lazy';
     m.append(node);
     const cap = el('figcaption', 'mono');
@@ -644,7 +659,7 @@ async function buildMenu() {
 
   const ring = $('#ring');
   for (const m of MENU_TILES) {
-    const r = await resolve(m, 480, 300);
+    const r = await resolve(m, 480, 300, 'small');
     const t = el('div', 'ring-tile');
     const a = mediaNode(r), b = mediaNode(r);
     a.loading = b.loading = 'lazy';
@@ -666,7 +681,7 @@ function layoutRing() {
 
 function buildFooter() {
   if (FOOTER_FILM) {
-    const v = mediaNode({ type: 'video', src: FOOTER_FILM.video, poster: FOOTER_FILM.img });
+    const v = mediaNode({ type: 'video', src: filmFor(FOOTER_FILM), poster: FOOTER_FILM.img });
     v.preload = 'none';
     $('#ftrReel').prepend(v);
     S.footer.video = v;
@@ -738,10 +753,7 @@ function heroScene() {
 function introScene() {
   ScrollTrigger.create({
     trigger: '#intro', start: 'top bottom', end: 'bottom top',
-    onToggle: s => {
-      S.intro.active = s.isActive;
-      S.intro.videos.forEach(v => (s.isActive ? v.play().catch(() => {}) : v.pause()));
-    },
+    onToggle: s => { S.intro.active = s.isActive; },
     onUpdate: s => (S.intro.p = s.progress),
   });
   // signature: a highlighter — the white bands sweep across first, then the ink settles into them
@@ -814,7 +826,14 @@ function soundScene() {
       $('#soundHead').style.left = `calc(${st.progress * 100}% - 1px)`;
     },
   });
-  s.liquid?.prime(0);
+  // one screen before the section arrives, the first chapter's films start loading
+  ScrollTrigger.create({
+    trigger: '#sound', start: 'top bottom+=100%', once: true,
+    onEnter: () => {
+      if (s.liquid) { s.liquid.prepare(0); s.stillsDue = true; }   // and its stills go up, one per frame (see loop)
+      else { const v = $('#soundFallback > video.fb-main'); if (v) v.preload = 'auto'; }
+    },
+  });
   // the film on screen in each chapter is the one that is heard (the side cameras stay silent)
   s.mains = $$('#soundFallback > .fb-main').map(m => (m.tagName === 'VIDEO' ? m : null));
   s.mains.forEach(v => v && voices.add(v));
@@ -823,6 +842,7 @@ function soundScene() {
     onToggle: st => {
       S.sound.active = st.isActive;
       if (S.sound.liquid) S.sound.liquid.active = st.isActive;
+      if (st.isActive && !s.primed) { s.primed = true; s.liquid?.prime(0); }   // then the second chapter's, behind it
       if (!st.isActive) $$('#soundFallback video').forEach(v => { v.muted = true; v.pause(); });   // out of view: silent and still
     },
   });
@@ -891,6 +911,11 @@ function archiveScene() {
     onToggle: s => { A.active = s.isActive; if (!s.isActive) { A.cards.forEach(c => c.video?.pause()); A.playing = null; A.front = -1; } },
   });
   ScrollTrigger.create({ trigger: sec, start: 'top top+=40', end: 'bottom top+=40', onToggle: s => setDarkZone('archive', s.isActive) });
+  // one screen before the section arrives, the films at the front start loading, so a hover plays at once
+  ScrollTrigger.create({
+    trigger: sec, start: 'top bottom+=100%', once: true,
+    onEnter: () => A.cards.slice(0, 3).forEach((c, i) => setTimeout(() => { if (c.video) c.video.preload = 'auto'; }, i * 200)),
+  });
 
   const go = i => { A.target = clamp(i, 0, N - 1); };
   const step = d => go(Math.round(A.target) + d);
@@ -991,7 +1016,9 @@ function updateArchive(dt) {
   const front = clamp(Math.round(shown), 0, N - 1);
   if (front !== A.front) {
     A.front = front;
-    A.cards.forEach((c, i) => { if (c.video && Math.abs(i - front) <= 2) c.video.preload = 'auto'; });
+    // one after another: a film's first load costs the page a moment
+    A.cards.filter((c, i) => c.video && c.video.preload !== 'auto' && Math.abs(i - front) <= 2)
+      .forEach((c, i) => setTimeout(() => { c.video.preload = 'auto'; }, i * 200));
   }
 }
 
@@ -1234,7 +1261,8 @@ function makeGrain() {
   c.width = c.height = 160;
   const g = c.getContext('2d');
   const d = g.createImageData(160, 160);
-  for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+  // black specks, as opaque as the noise is dark: drawn normally this equals multiplying by the noise
+  for (let i = 0; i < d.data.length; i += 4) { d.data[i] = d.data[i + 1] = d.data[i + 2] = 0; d.data[i + 3] = 255 - Math.random() * 255; }
   g.putImageData(d, 0, 0);
   $('.grain').style.setProperty('--grain', `url(${c.toDataURL()})`);
 }
@@ -1261,6 +1289,7 @@ function loop() {
     if (S.intro.active) updateIntro();
     if (S.archive.active) updateArchive(dt);
     if (S.sound.active) updateSound(time);
+    else if (S.sound.stillsDue) S.sound.stillsDue = !S.sound.liquid.uploadStills();   // approaching: stills go up one per frame
     if (S.footer.active) updateFooter(time);
     if (S.menu.open) updateMenu(dt);
   });
@@ -1312,12 +1341,23 @@ async function boot() {
   menuSetup(); lightboxSetup(); headerSetup();
   ScrollTrigger.refresh();
 
+  // Phones fire 'resize' every time their browser bar slides in or out while scrolling; re-measuring the
+  // page then made scrolling stutter. Only a real change of size counts (on phones: a change of width).
+  let lastW = innerWidth, lastH = innerHeight, rt;
   addEventListener('resize', () => {
-    S.sound.liquid?.resize();
-    S.hero.slides?.resize();
-    layoutRing();
-    fitWords();
+    if (innerWidth === lastW && (touch || innerHeight === lastH)) return;
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      lastW = innerWidth; lastH = innerHeight;
+      S.sound.liquid?.resize();
+      S.hero.slides?.resize();
+      layoutRing();
+      fitWords();
+    }, 120);
   });
+
+  // late web fonts change line lengths: measure again once they are in
+  document.fonts?.ready.then(() => { fitWords(); ScrollTrigger.refresh(); });
 
   // ready: the site is built behind the splash
   document.body.classList.remove('is-loading');

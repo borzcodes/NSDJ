@@ -5,7 +5,9 @@
 
    MEDIA: each item accepts
      img:    'assets/img/photo.jpg'          photo (also used as video poster)
-     video:  'assets/video/clip.mp4'         muted loop (H.264 mp4)
+     video:  'assets/video/clip.mp4'         loop (H.264 mp4, 1080p)
+   Every film also exists in lighter sizes (see clip() below): the site plays the smallest one
+   that still looks sharp where it is shown, so it stays fast on any connection.
    Crops keep the DJ in view: his position in every file is listed in FOCUS below.
 
    Anything marked  // PLACEHOLDER  still waits for the real text or data.
@@ -26,7 +28,7 @@ const DIMS = {
   'rooftop-drink': [2560, 3840], 'rooftop-profile-1': [2560, 3840], 'rooftop-profile-2': [2560, 3840],
   ...Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`studio-${String(i + 1).padStart(2, '0')}`, [2560, 3840]])),
   'studio-17': [1024, 1536],
-  // clips (Full HD, the hero also exists in 4K)
+  // clips (Full HD; the side cameras of The Sound are 720p)
   'hero': [1920, 1080],
   'ev-flag': [1080, 1920], 'ev-rooftop': [1440, 1920], 'ev-unamaas': [1080, 1920], 'ev-redroom': [1080, 1920], 'ev-b2b': [1080, 1920],
   'ev-golden': [1440, 1920], 'ev-prism': [1080, 1920], 'ev-live': [1080, 1920], 'ev-beach': [1080, 1920], 'ev-haze': [1080, 1920],
@@ -52,8 +54,20 @@ const FOCUS = {
   'ch-bigroom-l': [0.5, 0.65], 'ch-bigroom-r': [0.5, 0.6],
 };
 const meta = n => ({ ...(DIMS[n] ? { w: DIMS[n][0], h: DIMS[n][1] } : {}), ...(FOCUS[n] ? { fx: FOCUS[n][0], fy: FOCUS[n][1] } : {}) });
-const clip = (name, extra = {}) => ({ video: V + name + '.mp4', img: P + name + '.jpg', ...meta(name), ...extra });
-const photo = (name, extra = {}) => ({ img: I + name + '.jpg', full: I + 'full/' + name + '.jpg', ...meta(name), ...extra });
+/* Film sizes:
+     video     <name>.mp4        1080p   the big films on desktop
+     video720  720/<name>.mp4    720p    phones, and the side cameras of The Sound
+   Stills: img = posters/<name>.jpg (full size), thumb = posters/thumb/<name>.jpg (640 px, for small tiles) */
+const clip = (name, extra = {}) => ({
+  video: V + name + '.mp4', video720: V + '720/' + name + '.mp4',
+  img: P + name + '.jpg', thumb: P + 'thumb/' + name + '.jpg', ...meta(name), ...extra,
+});
+// the side cameras fill a third of the screen at most, so they only exist in 720p
+const sideClip = name => clip(name, { video: V + '720/' + name + '.mp4' });
+/* Photo sizes: full = the 4K file (assets/img/full/), img = 1600 px copy, thumb = 800 px copy (assets/img/thumb/)
+   for the small places (collage, menu, frames grid): a browser holds every image in memory at its full size,
+   so small tiles need small files or phones run out of memory. */
+const photo = (name, extra = {}) => ({ img: I + name + '.jpg', full: I + 'full/' + name + '.jpg', thumb: I + 'thumb/' + name + '.jpg', ...meta(name), ...extra });
 
 export const SITE = {
   artist: 'NORTHSOUL',
@@ -79,7 +93,7 @@ export const SPLASH = {
    kind + title = the small label on the left of each slide.
    Each shot fills the screen; the crop follows the DJ (see FOCUS). */
 export const SLIDES = [
-  { kind: 'Live',     title: 'Main Stage',       media: clip('hero', { video4k: V + 'hero-4k.mp4' }) },   // 4K plays on big high-density screens
+  { kind: 'Live',     title: 'Main Stage',       media: clip('hero') },
   { kind: 'Live',     title: 'Hands Up',         media: photo('live-gold-1') },
   { kind: 'Rooftop',  title: 'Marrakech Nights', media: photo('rooftop-minaret-2') },
   { kind: 'Live',     title: 'Flag Night',       media: photo('live-flag-1') },
@@ -129,7 +143,7 @@ export const ARTIST = {
 /* ---------- THE SOUND: full-screen chapters with liquid transitions ----------
    media = the main film (phones show only this one)
    sides = [left, right] films — on wide screens the chapter becomes a 3-camera wall */
-const chapter = (main, left, right) => ({ media: clip(main), sides: [clip(left), clip(right)] });
+const chapter = (main, left, right) => ({ media: clip(main), sides: [sideClip(left), sideClip(right)] });
 export const CHAPTERS = [
   { label: 'Afro House',    sub: 'Warm, rolling, hypnotic',      note: 'Percussion that pulls the whole floor into one groove.',                    ...chapter('ch-stage',    'ch-stage-l',    'ch-stage-r') },
   { label: 'Afro Tech',     sub: 'Darker, driving, relentless',  note: 'Tension built bar by bar until the room has nowhere to go but up.',          ...chapter('ch-club',     'ch-club-l',     'ch-club-r') },

@@ -10,6 +10,7 @@
        vertical and the screen is wide.
    Sources can be <video>, <img> or <canvas>.
    ========================================================================== */
+import { decoded } from './slides.js';
 
 const VERT = `
 attribute vec2 aPos;
@@ -26,6 +27,8 @@ uniform vec2 uRes, uMouse;
 uniform float uP, uTime, uBeat, uVel, uZoomA, uZoomB, uPanelX, uColsA, uColsB, uGutter;
 
 vec2 mirror(vec2 c){ return 1.0 - abs(1.0 - mod(c, 2.0)); }
+// textures go up the way the files are stored (top row first), so the picture is flipped here, for free
+vec4 tx(sampler2D t, vec2 c){ return texture2D(t, vec2(c.x, 1.0 - c.y)); }
 // cover-fit a texture into a box (uv is 0..1 inside the box), keeping the focus point (the DJ) in frame
 vec2 coverIn(vec2 uv, vec2 tex, vec2 box, float zoom, vec2 focus){
   float rb = box.x / box.y, rt = tex.x / tex.y;
@@ -42,14 +45,14 @@ float noise(vec2 p){
 float fbm(vec2 p){ float v = 0.0, a = 0.5; for(int i = 0; i < 5; i++){ v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
 
 vec3 rgbSample(sampler2D t, vec2 uv, vec2 shift){
-  return vec3(texture2D(t, uv + shift).r, texture2D(t, uv).g, texture2D(t, uv - shift).b);
+  return vec3(tx(t, uv + shift).r, tx(t, uv).g, tx(t, uv - shift).b);
 }
 vec3 ringBlur(sampler2D t, vec2 c){
-  vec3 acc = texture2D(t, c).rgb * 2.0;
+  vec3 acc = tx(t, c).rgb * 2.0;
   for(int i = 0; i < 12; i++){
     float a = float(i) * 0.5236;
-    acc += texture2D(t, mirror(c + vec2(cos(a), sin(a)) * 0.04)).rgb;
-    acc += texture2D(t, mirror(c + vec2(cos(a + 0.26), sin(a + 0.26)) * 0.018)).rgb;
+    acc += tx(t, mirror(c + vec2(cos(a), sin(a)) * 0.04)).rgb;
+    acc += tx(t, mirror(c + vec2(cos(a + 0.26), sin(a + 0.26)) * 0.018)).rgb;
   }
   return acc / 26.0;
 }
@@ -175,7 +178,6 @@ export class Liquid {
     this.u = {};
     UNIFORMS.forEach(n => (this.u[n] = gl.getUniformLocation(this.prog, n)));
     ['uA0', 'uA1', 'uA2', 'uB0', 'uB1', 'uB2'].forEach((n, i) => gl.uniform1i(this.u[n], i));
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
     this.tex = chapters.map(ch => ch.cols.map(s => (s ? this.makeTex(s) : null)));
     this.state = { index: 0, p: 0, beat: 0, vel: 0, mouse: [0.5, 0.5], local: 0 };
@@ -216,12 +218,13 @@ export class Liquid {
 
   upload(t, el) {
     const gl = this.gl;
-    const ok = el instanceof HTMLVideoElement ? el.readyState >= 2
-      : el instanceof HTMLImageElement ? el.complete && el.naturalWidth > 0 : true;
-    if (!ok) return false;
+    let data = el;
+    if (el instanceof HTMLVideoElement) { if (el.readyState < 2) return false; }
+    else if (el instanceof HTMLImageElement) { data = decoded(el); if (!data) return false; }   // decoded in the background
     gl.bindTexture(gl.TEXTURE_2D, t);
-    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el); } catch (e) { return false; }
+    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data); } catch (e) { return false; }
     if (el === t.src.el) t.live = true;
+    t.has = true;                 // something real is on this texture (the film, or its still)
     return true;
   }
 
@@ -239,11 +242,12 @@ export class Liquid {
 
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    this.canvas.width = Math.max(1, Math.round(w * dpr));
-    this.canvas.height = Math.max(1, Math.round(h * dpr));
+    const w = Math.max(1, Math.round(this.canvas.clientWidth * dpr)), h = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
     this.dpr = dpr;
-    this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    if (w === this.canvas.width && h === this.canvas.height) return;   // resizing a canvas wipes it: only when needed
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.gl.viewport(0, 0, w, h);
   }
 
   /** position in [0, n-1]: integer = a chapter on screen, fraction = melting into the next one.
@@ -265,20 +269,34 @@ export class Liquid {
     return this.chapters[k].cols.filter((s, j) => s && s.isVideo && (cols === 3 || j === 1)).map(s => s.el);
   }
 
-  /** start the next chapter's films ahead of the melt; resolves once they have frames (or after a short wait) */
+  /** start the next chapter's films ahead of the melt; resolves once they have frames (or after a short wait).
+      A film's first load costs the page a moment, so they start one after another, not all at once. */
   prepare(k) {
     this.warm = k;
     const vids = this.filmsOf(k);
-    vids.forEach(v => { v.preload = 'auto'; if (this.active && v.paused) v.play().catch(() => {}); });
+    vids.forEach((v, i) => setTimeout(() => { v.preload = 'auto'; }, i * 110));   // render() starts them playing, one at a time
     return Promise.race([
       Promise.all(vids.map(v => (v.readyState >= 3 ? 0 : new Promise(r => v.addEventListener('canplay', r, { once: true }))))),
       new Promise(r => setTimeout(r, 450)),
     ]);
   }
 
+  /** Put the chapters' stills on the GPU, one per call (call it once a frame while the section approaches).
+      All fifteen in one frame froze the page for a quarter of a second. Returns true when all are up. */
+  uploadStills() {
+    let pending = false;
+    for (const row of this.tex) for (const t of row) {
+      if (!t || t.live || t.has || !t.src.poster) continue;
+      if (this.upload(t, t.src.poster)) return false;      // one done: the next one next frame
+      pending = true;                                      // still downloading or decoding (that has now begun)
+    }
+    return !pending;
+  }
+
   /** buffer the neighbours of the chapter on screen, so the next scroll melts straight into moving footage */
   prime(k) {
-    [k - 1, k + 1].forEach(j => { if (j >= 0 && j < this.chapters.length) this.filmsOf(j).forEach(v => { v.preload = 'auto'; }); });
+    const vids = [k + 1, k - 1].filter(j => j >= 0 && j < this.chapters.length).flatMap(j => this.filmsOf(j));
+    vids.forEach((v, i) => setTimeout(() => { if (v.preload !== 'auto') v.preload = 'auto'; }, 300 + i * 250));
   }
 
   /** true when a film has moved on to a new frame since its last upload (≈ its own frame rate, not the screen's) */
@@ -302,14 +320,20 @@ export class Liquid {
     // only the chapter on screen plays and uploads; the next one only while the melt is running
     const needed = (k, j) => (k === a && (colsA === 3 || j === 1)) || (moving && k === b && (colsB === 3 || j === 1));
     const warm = (k, j) => k === this.warm && (this.colsOf(k) === 3 || j === 1);
+    const now = performance.now();
+    let stills = 1;    // at most one still goes up per frame (plus those on screen right now)
 
     this.tex.forEach((row, k) => row.forEach((t, j) => {
       if (!t) return;
       const src = t.src;
       if (!src.isVideo) { if (!t.live) this.upload(t, src.el); return; }
+      // the still, until the film has frames
+      if (!t.live && !t.has && src.poster && (needed(k, j) || stills-- > 0)) this.upload(t, src.poster);
       const on = this.active && needed(k, j);
-      if (on || (this.active && warm(k, j))) { if (src.el.paused) src.el.play().catch(() => {}); }
-      else if (!src.el.paused) src.el.pause();
+      if (on || (this.active && warm(k, j))) {
+        // films that need to start do so one every 100 ms: starting three at once was a visible stutter
+        if (src.el.paused && now - (this.lastStart || 0) > 100) { this.lastStart = now; src.el.play().catch(() => {}); }
+      } else if (!src.el.paused) src.el.pause();
       if (on && (!t.live || this.fresh(t))) this.upload(t, src.el);
     }));
 

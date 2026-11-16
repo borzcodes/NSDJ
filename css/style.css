@@ -307,6 +307,7 @@ body.menu-open .hdr { transform: none; }
   font-weight: 500;
   font-size: clamp(24px, 3.5vw, 62px); line-height: 1.08; letter-spacing: -.045em;
   padding: 0 var(--gutter);
+  will-change: transform, opacity;   /* it grows to 3.4× as it flies past: drawn once and scaled, not redrawn every frame */
 }
 .mf-line { display: block; overflow: hidden; padding: .02em .04em; white-space: nowrap; }
 .mf-line > span { display: inline-block; }
@@ -747,10 +748,12 @@ body.menu-open .hdr { transform: none; }
 .lightbox__cap b { color: var(--fg); font-weight: 400; }
 
 
+/* film grain over everything. It is black specks whose transparency follows the noise, so plain blending
+   darkens exactly like `multiply` did, without making the browser re-blend the whole page every frame
+   (which stuttered scrolling). It drifts at most 8% of its size, so a quarter-screen margin is enough. */
 .grain {
-  position: fixed; inset: -100%; z-index: 150; pointer-events: none;
+  position: fixed; inset: -25%; z-index: 150; pointer-events: none;
   opacity: .05;
-  mix-blend-mode: multiply;
   background-image: var(--grain);
   animation: grain 1s steps(5) infinite;
 }
