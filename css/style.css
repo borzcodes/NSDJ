@@ -47,7 +47,9 @@
 html { background: var(--bg); -webkit-text-size-adjust: 100%; }
 html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
-.lenis.lenis-stopped { overflow: hidden; }
+/* Never any overflow on <html> or <body>: on an iPhone it stopped every pinned (sticky) scene from staying on
+   screen — the hero, the intro, The Sound and the record all scrolled straight past. While the doors or the
+   menu are up, scrolling is held by the scripts instead (Lenis / NativeScroll / splashInput in main.js). */
 
 body {
   background: var(--bg);
@@ -56,12 +58,10 @@ body {
   font-size: 14px;
   line-height: 1.55;
   letter-spacing: -.005em;
-  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
-body.is-loading { overflow: hidden; }
 img, video, canvas, svg { display: block; max-width: 100%; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
@@ -722,9 +722,10 @@ body.menu-open .hdr { transform: none; }
 /* film grain over everything. It is black specks whose transparency follows the noise, so plain blending
    darkens exactly like `multiply` did, without making the browser re-blend the whole page every frame
    (which stuttered scrolling). It drifts at most 8% of its size, so a quarter-screen margin is enough. */
-.grain {
-  position: fixed; inset: -25%; z-index: 150; pointer-events: none;
-  opacity: .05;
+.grain { position: fixed; inset: 0; z-index: 150; pointer-events: none; overflow: hidden; opacity: .05; }
+/* the moving layer is bigger than the screen; the fixed box clips it, so it never widens the page */
+.grain::before {
+  content: ''; position: absolute; inset: -25%;
   background-image: var(--grain);
   animation: grain 1s steps(5) infinite;
 }
@@ -801,5 +802,5 @@ body.menu-open .hdr { transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .grain, .entry__scroll i::after { animation: none; }
+  .grain::before, .entry__scroll i::after { animation: none; }
 }

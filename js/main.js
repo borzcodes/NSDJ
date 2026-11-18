@@ -218,7 +218,9 @@ function mixVoices() {
  */
 class NativeScroll {
   constructor() {
-    this.scroll = scrollY; this.velocity = 0; this.direction = 0; this.handlers = [];
+    this.scroll = scrollY; this.velocity = 0; this.direction = 0; this.handlers = []; this.stopped = false;
+    // while held (doors, menu, lightbox) a swipe or wheel does nothing; a film's own controls still work
+    this.hold = e => { if (e.cancelable && !e.target.closest?.('video')) e.preventDefault(); };
     document.documentElement.classList.add('lenis');
     addEventListener('scroll', () => {
       const y = scrollY, d = y - this.scroll;
@@ -229,8 +231,20 @@ class NativeScroll {
   }
   on(type, h) { if (type === 'scroll') this.handlers.push(h); }
   raf() { this.velocity *= 0.85; }
-  stop() { document.documentElement.classList.add('lenis-stopped'); }
-  start() { document.documentElement.classList.remove('lenis-stopped'); }
+  // Not overflow: hidden on <html> (that broke the pinned scenes on iPhone). The blocking listeners exist only
+  // while scrolling is held, so the rest of the time no touch ever waits for the page's scripts.
+  stop() {
+    if (this.stopped) return;
+    this.stopped = true;
+    addEventListener('touchmove', this.hold, { passive: false });
+    addEventListener('wheel', this.hold, { passive: false });
+  }
+  start() {
+    if (!this.stopped) return;
+    this.stopped = false;
+    removeEventListener('touchmove', this.hold);
+    removeEventListener('wheel', this.hold);
+  }
   scrollTo(target) {
     const node = typeof target === 'string' ? document.querySelector(target) : null;
     const y = node ? node.getBoundingClientRect().top + scrollY : (typeof target === 'number' ? target : 0);
@@ -273,13 +287,17 @@ function splashIntro() {
 
 function splashInput() {
   const go = () => enterSite();
-  const onWheel = e => { if (e.deltaY > 2) go(); };
-  const onKey = e => { if (['ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) go(); };
+  // the page behind the doors must not move: these hold it still (the page itself is never set to overflow: hidden)
+  const onWheel = e => { if (e.cancelable) e.preventDefault(); if (e.deltaY > 2) go(); };
+  const onKey = e => {
+    if (['ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); go(); }
+    else if (['ArrowUp', 'PageUp', 'Home', 'End'].includes(e.key)) e.preventDefault();
+  };
   let ty = null;
   const onTouchStart = e => { ty = e.touches[0].clientY; };
   // the swipe opens the doors and nothing else: the page behind must not start scrolling under them
   const onTouchMove = e => { if (e.cancelable) e.preventDefault(); if (ty !== null && ty - e.touches[0].clientY > 24) go(); };
-  addEventListener('wheel', onWheel, { passive: true });
+  addEventListener('wheel', onWheel, { passive: false });
   addEventListener('keydown', onKey);
   addEventListener('touchstart', onTouchStart, { passive: true });
   addEventListener('touchmove', onTouchMove, { passive: false });
@@ -301,6 +319,8 @@ function enterSite() {
   }
   S.splash.done = true;
   S.splash.off?.();
+  // the doors open onto the hero: a reload (or an iPhone's pull-to-refresh) may have put the page back where it was
+  if (scrollY > 0) window.scrollTo(0, 0);     // (Lenis picks the position up again when it starts)
   S.splash.intro?.progress(1);
   sp.style.pointerEvents = 'none';
   const doors = ['#doorL', '#doorR'];
@@ -1200,7 +1220,6 @@ function menuSetup() {
     setDarkZone('menu', false);
     lenis.stop();
     gsap.fromTo('#menuNav .t', { yPercent: 110 }, { yPercent: 0, duration: 1.1, ease: 'expo.out', stagger: 0.05, delay: 0.25 });
-    gsap.fromTo('#menuNav .n', { opacity: 0 }, { opacity: 1, duration: 0.6, stagger: 0.05, delay: 0.5 });
     gsap.fromTo('#ring', { scale: 0.55, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.6, ease: 'expo.out', delay: 0.1 });
   };
   const close = () => {
@@ -1412,9 +1431,30 @@ async function boot() {
   sc.firstChild.textContent = 'Scroll to discover ';
   $('#entry').classList.add('is-ready');
   S.ready = true;
+  debugPanel();
   $('#splash').classList.remove('is-waiting');
   if (S.splash.done) lenis.start();
   else if (S.splash.want) enterSite();
+}
+
+/** add ?debug to the address to see, live in a corner, how the page is scrolling (for checking on a phone) */
+function debugPanel() {
+  if (!/[?&]debug\b/.test(location.search)) return;
+  const box = el('pre');
+  box.style.cssText = 'position:fixed;left:6px;right:6px;bottom:calc(6px + env(safe-area-inset-bottom,0px));z-index:999;margin:0;padding:6px 8px;'
+    + 'font:10px/1.4 ui-monospace,Menlo,monospace;background:rgba(0,0,0,.78);color:#7CFC7C;pointer-events:none;white-space:pre-wrap';
+  document.body.append(box);
+  const pins = [['hero', '.hero__sticky'], ['intro', '.intro__sticky'], ['sound', '.sound__sticky'], ['next', '.next__stage']];
+  const ov = n => { const s = getComputedStyle(n); return s.overflowX + '/' + s.overflowY; };
+  setInterval(() => {
+    const vv = window.visualViewport, se = document.scrollingElement;
+    box.textContent = [
+      `scrollY ${Math.round(scrollY)}  win ${innerWidth}x${innerHeight}  vv ${vv ? Math.round(vv.height) + ' @' + Math.round(vv.pageTop) : '-'}`,
+      `html "${document.documentElement.className}" ${ov(document.documentElement)}  body ${ov(document.body)}`,
+      `scroller ${se ? se.tagName + ' ' + Math.round(se.scrollTop) : '-'}  body.scrollTop ${document.body.scrollTop}  touch ${touch}`,
+      'pinned tops: ' + pins.map(([n, s]) => `${n} ${Math.round($(s).getBoundingClientRect().top)}`).join('  '),
+    ].join('\n');
+  }, 250);
 }
 
 function reveal() {
