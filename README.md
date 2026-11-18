@@ -54,6 +54,8 @@ media: { video: 'assets/video/club-night.mp4', img: 'assets/img/club-night.jpg' 
   `ffmpeg -i in.mov -c:v libx264 -preset medium -crf 20 -maxrate 8M -bufsize 16M -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 192k name.mp4`
   `ffmpeg -i in.mov -vf "scale=-2:1280" -c:v libx264 -preset medium -crf 22 -maxrate 3M -bufsize 6M -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 192k 720/name.mp4`
   (for a landscape clip use `scale=1280:-2`)
+- **Phones:** they scroll natively (Lenis smooths the wheel on computers only: its touch listeners made an iPhone wait for the page's scripts before it could scroll). The full-screen films are as tall as the screen with the browser bar tucked away (`100lvh`), and the words over them sit `--bar` higher, so no strip of page shows when Safari's bar slides off and the bar never covers them.
+- **Film sound on iPhone:** Safari there cannot fade a film's volume and stops a film when a second one plays with sound, so only the loudest film is heard at a time (`mixVoices` in `js/main.js`). A film Safari refuses stays silent until the next tap. In Low Power Mode Safari refuses to play films until the visitor taps; the films on screen then start.
 - **Hosting:** `vercel.json` lets browsers keep photos and films for a day, so a second visit loads instantly.
 
 ## Sound

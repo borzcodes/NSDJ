@@ -261,7 +261,13 @@ export class Slides {
       }
       if (!t.live && !t.has && s.poster) this.upload(t, s.poster);     // the still, until the film has frames
       const on = this.active && shown;
-      if (on) { if (s.el.paused) s.el.play().catch(() => {}); this.upload(t, s.el); }
+      if (on) {
+        // a film the browser refused (an iPhone in Low Power Mode) is asked again twice a second, not every frame
+        if (s.el.paused && now - (s.tried || 0) > 500) { s.tried = now; s.el.play().catch(() => {}); }
+        // a new picture goes up only when the film has moved on to its next frame (~30 a second, not 60-120)
+        const ct = s.el.currentTime;
+        if (!t.live || ct !== t.lastT) { t.lastT = ct; this.upload(t, s.el); }
+      }
       else if (!s.el.paused) s.el.pause();
     });
     const A = this.texOf(ia), B = this.texOf(ib);

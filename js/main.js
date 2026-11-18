@@ -25,6 +25,11 @@ const pad = (n, l = 2) => String(n).padStart(l, '0');
 const TAU = Math.PI * 2;
 const touch = matchMedia('(hover: none), (pointer: coarse)').matches;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// an iPhone keeps every film at full volume (it cannot be faded) and lets only one play with sound at a time
+const canFade = (() => { try { const a = document.createElement('audio'); a.volume = 0.5; return Math.abs(a.volume - 0.5) < 0.01; } catch { return false; } })();
+// parallax: on a phone the page moves natively, ahead of the scripts, so pictures that drift with the scroll
+// ease after it (they would tremble if they followed it a frame late); with the smooth wheel they follow exactly
+const drift = touch ? 0.5 : true;
 const mobile = () => innerWidth < 900;
 const portrait = () => innerWidth < innerHeight;
 const frame = () => new Promise(r => setTimeout(r, 0));
@@ -152,15 +157,86 @@ const S = {
 const voices = new Set();      // every film with a soundtrack
 let heard = false;             // for browsers that cannot say whether the visitor has clicked yet
 const audible = () => (navigator.userActivation ? navigator.userActivation.hasBeenActive : heard);
+function addVoice(v) {
+  voices.add(v);
+  v.want = 0;
+  // Safari stops a film it will not let be heard (no tap yet, or another film already has the sound).
+  // It then stays silent until the next tap, instead of being started and stopped over and over.
+  v.addEventListener('pause', () => { if (!v.muted) { v.denied = true; v.muted = true; } });
+}
 function hearFilms() {
   if (!navigator.userActivation) heard = true;
   if (!audible()) return;      // a swipe to scroll is not a tap: wait for a real one
-  // Safari lets a film be unmuted later (as you scroll) only if it was once unmuted inside a click or tap
-  voices.forEach(v => { if (v.muted) { v.muted = false; v.muted = true; } });
+  if (navigator.userActivation && !navigator.userActivation.isActive) return;
+  // Inside a tap Safari lifts its rules for a film: it may then be unmuted later (as you scroll) and, on an
+  // iPhone in Low Power Mode, play at all. Films with sound, and films not playing yet, get that now.
+  $$('video').forEach(v => {
+    v.denied = false;
+    if (v.controls || !v.muted || (!v.paused && !voices.has(v))) return;
+    v.muted = false; v.muted = true;
+  });
+  // the films that should be on screen right now start inside the tap (Low Power Mode refuses them otherwise)
+  const hv = S.hero.film;
+  if (hv && S.hero.active && hv.paused) hv.play().catch(() => {});
+  if (S.next.playing) S.next.videos.forEach(v => v.paused && v.play().catch(() => {}));
 }
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, hearFilms, { capture: true, passive: true }));
 // a hidden tab goes quiet
 document.addEventListener('visibilitychange', () => { if (document.hidden) voices.forEach(v => { v.muted = true; }); });
+
+/**
+ * Each frame every film with sound says how loud it wants to be (v.want, 0..1); this decides who is heard.
+ * Where the volume can be faded, each plays at its own level (the crossfades). On an iPhone the volume is
+ * fixed and a second film with sound makes Safari stop the first, so the loudest one alone is heard.
+ */
+let lead = null;
+function mixVoices() {
+  if (canFade) {
+    voices.forEach(v => {
+      const w = v.paused || v.denied ? 0 : v.want, mute = w < 0.01;
+      if (v.muted !== mute) v.muted = mute;
+      if (!mute && Math.abs(v.volume - w) > 0.01) v.volume = Math.min(1, w);
+    });
+  } else {
+    const live = v => v && !v.paused && !v.denied && v.want > 0.3;
+    let best = null;
+    voices.forEach(v => { if (live(v) && (!best || v.want > best.want)) best = v; });
+    // the film being heard keeps the sound until another is clearly louder (no flicking back and forth)
+    if (best && live(lead) && best.want - lead.want < 0.25) best = lead;
+    lead = best;
+    voices.forEach(v => { if (v !== lead && !v.muted) v.muted = true; });   // the others go quiet first
+    if (lead && lead.muted) lead.muted = false;
+  }
+  voices.forEach(v => { v.want = 0; });
+}
+
+/**
+ * Phones and tablets scroll natively. Lenis listens to every touch with a blocking listener, so the phone
+ * had to wait for the page's scripts before it could move the page: on an iPhone, while the films and the
+ * WebGL scenes were busy, scrolling jumped and froze. This stands in for Lenis there, with the few calls
+ * the site uses, and never holds up a touch.
+ */
+class NativeScroll {
+  constructor() {
+    this.scroll = scrollY; this.velocity = 0; this.direction = 0; this.handlers = [];
+    document.documentElement.classList.add('lenis');
+    addEventListener('scroll', () => {
+      const y = scrollY, d = y - this.scroll;
+      if (d) this.direction = d > 0 ? 1 : -1;
+      this.velocity = d; this.scroll = y;
+      this.handlers.forEach(h => h(this));
+    }, { passive: true });
+  }
+  on(type, h) { if (type === 'scroll') this.handlers.push(h); }
+  raf() { this.velocity *= 0.85; }
+  stop() { document.documentElement.classList.add('lenis-stopped'); }
+  start() { document.documentElement.classList.remove('lenis-stopped'); }
+  scrollTo(target) {
+    const node = typeof target === 'string' ? document.querySelector(target) : null;
+    const y = node ? node.getBoundingClientRect().top + scrollY : (typeof target === 'number' ? target : 0);
+    scrollTo({ top: y, behavior: reduced ? 'auto' : 'smooth' });
+  }
+}
 
 /* ==========================================================================
    SPLASH — two doors, "North" | "Soul". One scroll (or key / tap) opens them
@@ -201,11 +277,12 @@ function splashInput() {
   const onKey = e => { if (['ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) go(); };
   let ty = null;
   const onTouchStart = e => { ty = e.touches[0].clientY; };
-  const onTouchMove = e => { if (ty !== null && ty - e.touches[0].clientY > 24) go(); };
+  // the swipe opens the doors and nothing else: the page behind must not start scrolling under them
+  const onTouchMove = e => { if (e.cancelable) e.preventDefault(); if (ty !== null && ty - e.touches[0].clientY > 24) go(); };
   addEventListener('wheel', onWheel, { passive: true });
   addEventListener('keydown', onKey);
   addEventListener('touchstart', onTouchStart, { passive: true });
-  addEventListener('touchmove', onTouchMove, { passive: true });
+  addEventListener('touchmove', onTouchMove, { passive: false });
   $('#splash').addEventListener('click', go);
   S.splash.off = () => {
     removeEventListener('wheel', onWheel); removeEventListener('keydown', onKey);
@@ -262,7 +339,7 @@ async function buildHero() {
   const first = sources[0];
   await Promise.race([loaded(first.poster || first.el), wait(2500)]);
   // then the first film, then the other photos (the slideshow only needs them a few seconds later)
-  if (first.isVideo) { first.el.preload = 'auto'; first.el.play().catch(() => {}); }
+  if (first.isVideo) { S.hero.film = first.el; first.el.preload = 'auto'; first.el.play().catch(() => {}); }
   sources.forEach(s => { if (s.later) s.el.src = s.later; });
   try {
     S.hero.slides = new Slides($('#slidesGl'), sources, { hold: 3.4, dur: 1.45, onChange: setSlideLabel });
@@ -729,7 +806,13 @@ function heroScene() {
 
   ScrollTrigger.create({
     trigger: '.hero', start: 'top bottom', end: 'bottom top',
-    onToggle: s => { S.hero.active = s.isActive; if (S.hero.slides) S.hero.slides.active = s.isActive; apply(); },
+    onToggle: s => {
+      S.hero.active = s.isActive;
+      if (S.hero.slides) S.hero.slides.active = s.isActive;
+      // the slideshow stops drawing once the hero is off screen, so its film is paused here (it played on, unseen, all page long)
+      if (!s.isActive) S.hero.film?.pause();
+      apply();
+    },
   });
 }
 
@@ -756,7 +839,7 @@ function introScene() {
 function artistScene() {
   gsap.fromTo('#artistImg > *', { scale: 1.16, yPercent: -3 }, {
     scale: 1, yPercent: 3, ease: 'none',
-    scrollTrigger: { trigger: '#artist', start: 'top bottom', end: 'bottom top', scrub: true },
+    scrollTrigger: { trigger: '#artist', start: 'top bottom', end: 'bottom top', scrub: drift },
   });
   gsap.from('#artistImg', { clipPath: 'inset(100% 0% 0% 0%)', duration: 1.5, ease: 'expo.inOut', scrollTrigger: { trigger: '#artist', start: 'top 75%' } });
   // signature: reading — each word comes up to full ink as your eye (the scroll) reaches it
@@ -805,7 +888,7 @@ function soundScene() {
   });
   // the film on screen in each chapter is the one that is heard (the side cameras stay silent)
   s.mains = $$('#soundFallback > .fb-main').map(m => (m.tagName === 'VIDEO' ? m : null));
-  s.mains.forEach(v => v && voices.add(v));
+  s.mains.forEach(v => v && addVoice(v));
   ScrollTrigger.create({
     trigger: '#sound', start: 'top bottom', end: 'bottom top',
     onToggle: st => {
@@ -831,13 +914,7 @@ function soundVoices() {
     gain = clamp((Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / innerHeight, 0, 1);
   }
   const a = Math.floor(s.g + 1e-4), p = clamp(s.g - a, 0, 1);
-  s.mains.forEach((v, k) => {
-    if (!v) return;
-    const w = gain * (k === a ? 1 - p : k === a + 1 ? p : 0);
-    const mute = w < 0.01 || v.paused;
-    if (v.muted !== mute) v.muted = mute;
-    if (!mute && Math.abs(v.volume - w) > 0.01) v.volume = w;
-  });
+  s.mains.forEach((v, k) => { if (v) v.want = gain * (k === a ? 1 - p : k === a + 1 ? p : 0); });   // heard in mixVoices
 }
 
 function setSoundLabel(i) {
@@ -944,7 +1021,7 @@ function archiveScene() {
   addEventListener('pointercancel', release);
 
   // the films play on their own (see updateArchive); the one in front is heard
-  A.cards.forEach(c => { if (c.video) { voices.add(c.video); c.vol = 0; } });
+  A.cards.forEach(c => { if (c.video) { addVoice(c.video); c.vol = 0; } });
   document.addEventListener('visibilitychange', () => { if (document.hidden) A.cards.forEach(c => c.video?.pause()); });
 }
 
@@ -994,9 +1071,7 @@ function updateArchive(dt) {
       if (v.paused && turn && now - (A.lastStart || 0) > 150) { A.lastStart = now; v.play().catch(() => {}); }
     } else if (!v.paused) v.pause();
     c.vol += ((i === front ? gain : 0) - c.vol) * k;
-    const mute = c.vol < 0.01 || v.paused;
-    if (v.muted !== mute) v.muted = mute;
-    if (!mute && Math.abs(v.volume - c.vol) > 0.01) v.volume = Math.min(1, c.vol);
+    v.want = c.vol;                // heard in mixVoices
   });
 }
 
@@ -1006,7 +1081,7 @@ function nextScene() {
   const setPlaying = on => {
     on = on && inView;
     if (on === playing) return;
-    playing = on;
+    playing = on; S.next.playing = on;
     sec.classList.toggle('is-playing', on);
     $('#nextNow').textContent = on ? 'Now playing — Side A' : 'Cueing up';
     S.next.videos.forEach(v => (on ? v.play().catch(() => {}) : v.pause()));
@@ -1039,7 +1114,7 @@ function framesScene() {
   const run = () => {
     $$('.fr-col').forEach((c, i) => {
       const dir = i % 2 ? -1 : 1;
-      gsap.fromTo(c, { y: dir * 90 }, { y: -dir * 90, ease: 'none', scrollTrigger: { trigger: '#frames', start: 'top bottom', end: 'bottom top', scrub: true } });
+      gsap.fromTo(c, { y: dir * 90 }, { y: -dir * 90, ease: 'none', scrollTrigger: { trigger: '#frames', start: 'top bottom', end: 'bottom top', scrub: drift } });
     });
     // signature: the darkroom — each print starts blown-out white and develops into the image
     ScrollTrigger.batch('.fr-item', {
@@ -1263,6 +1338,7 @@ function loop() {
     else if (S.sound.stillsDue) S.sound.stillsDue = !S.sound.liquid.uploadStills();   // approaching: stills go up one per frame
     if (S.footer.active) updateFooter(time);
     if (S.menu.open) updateMenu(dt);
+    mixVoices();
   });
 }
 
@@ -1287,7 +1363,7 @@ async function boot() {
   await fonts;
   fitWords();
 
-  lenis = new Lenis({ lerp: reduced ? 1 : 0.09, smoothWheel: !reduced });
+  lenis = touch ? new NativeScroll() : new Lenis({ lerp: reduced ? 1 : 0.09, smoothWheel: !reduced });
   lenis.on('scroll', ScrollTrigger.update);
   gsap.ticker.add(t => lenis.raf(t * 1000));
   gsap.ticker.lagSmoothing(0);
@@ -1345,7 +1421,8 @@ function reveal() {
   S.hero.slides?.start();
   gsap.timeline()
     .from('#heroWord .ci', { yPercent: 110, duration: 1.6, ease: 'expo.out', stagger: 0.05 }, 0.55)
-    .from('#hdr', { opacity: 0, y: -16, duration: 1.2, ease: 'expo.out' }, 0.8)
+    // cleared afterwards: a position left on the header overrode the class that slides it away while you scroll down
+    .from('#hdr', { opacity: 0, y: -16, duration: 1.2, ease: 'expo.out', clearProps: 'transform,translate,opacity' }, 0.8)
     .from('#entry > *', { opacity: 0, y: 14, duration: 1.2, stagger: 0.08, ease: 'expo.out' }, 0.9);
 }
 
