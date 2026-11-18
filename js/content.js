@@ -89,18 +89,11 @@ export const SPLASH = {
   words: ['North', 'Soul'],
 };
 
-/* ---------- ENTRY: full-screen slideshow with slit-scan transitions ----------
-   kind + title = the small label on the left of each slide.
-   Each shot fills the screen; the crop follows the DJ (see FOCUS). */
+/* ---------- ENTRY: the hero film, full screen; it breaks through with a slit-scan and then just plays (looping).
+   kind + title = the small label on the left. The crop follows the DJ (see FOCUS).
+   More shots can be added to the list: with two or more it becomes a slideshow with slit-scan cuts. */
 export const SLIDES = [
-  { kind: 'Live',     title: 'Main Stage',       media: clip('hero') },
-  { kind: 'Live',     title: 'Hands Up',         media: photo('live-gold-1') },
-  { kind: 'Rooftop',  title: 'Marrakech Nights', media: photo('rooftop-minaret-2') },
-  { kind: 'Live',     title: 'Flag Night',       media: photo('live-flag-1') },
-  { kind: 'Live',     title: 'The Room',         media: photo('live-bold-wide') },
-  { kind: 'Live',     title: 'Peak Time',        media: photo('live-gold-3') },
-  { kind: 'Live',     title: 'Blue Hour',        media: photo('live-blue') },
-  { kind: 'Rooftop',  title: 'After Sunset',     media: photo('rooftop-decks') },
+  { kind: 'Live', title: 'Main Stage', media: clip('hero') },
 ];
 
 /* ---------- MANIFESTO: the entry film collapses into this sentence ---------- */
@@ -110,19 +103,17 @@ export const HERO = {
   kicker: 'Afro House · Afro Tech · House · Open Format',
 };
 
-/* ---------- INTRO (photos and films flying through in 3D) ---------- */
+/* ---------- INTRO: just the words. The sentence, in the phrases it assembles from as you scroll
+   (each appears in its own place, alternating left and right). ---------- */
 export const INTRO = {
-  text: 'Born and raised in Tangier, Morocco — a DJ known for his distinctive sound, infectious energy and the ability to turn any venue into an unforgettable experience.',
+  lines: [
+    'Born and raised in Tangier, Morocco —',
+    'a DJ known for his distinctive sound,',
+    'infectious energy',
+    'and the ability to turn any venue into an unforgettable experience.',
+  ],
   link: { label: 'Meet the artist', href: '#artist' },
 };
-export const CASCADE = [
-  photo('live-gold-1'), clip('ev-golden'), photo('rooftop-minaret-1'), photo('live-flag-1'), clip('ev-unamaas'),
-  photo('live-bold-stage'), photo('rooftop-decks'), clip('ev-b2b'), photo('live-blue'), photo('live-booth-overhead'),
-  clip('ev-live'), photo('rooftop-minaret-2'), photo('live-red-decks'), clip('ev-flag'), photo('live-gold-2'),
-  photo('rooftop-mono'), clip('ev-rooftop'), photo('live-bold-red'), photo('rooftop-drink'), clip('ev-redroom'),
-  photo('live-flag-2'), photo('live-gold-3'), clip('ev-prism'), photo('rooftop-minaret-3'),
-];
-
 /* ---------- THE ARTIST (one portrait + bio) ---------- */
 export const ARTIST = {
   portrait: photo('studio-08'),
@@ -157,7 +148,6 @@ export const CHAPTERS = [
 export const ARCHIVE = {
   title: 'Past events',
   sub: 'Nights that stayed',
-  note: ['On replay', 'Live sets'],
 };
 export const EVENTS = [   // PLACEHOLDER titles — Kabana and M Beach were matched from what is visible in the footage, please confirm
   { title: 'Dare to be BOLD',     tag: 'BOLD Party',          media: clip('ev-flag') },

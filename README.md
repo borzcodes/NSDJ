@@ -28,11 +28,12 @@ media: { video: 'assets/video/club-night.mp4', img: 'assets/img/club-night.jpg' 
 | Slot | Folder | Recommended |
 |---|---|---|
 | Splash (`SPLASH`) | — | The first screen: two words on two doors and "Scroll to discover". The first scroll opens the doors onto the slideshow |
-| Entry slideshow (`SLIDES`) | `assets/img/` or `assets/video/` | Any mix of photos and clips. Each slide has a small label (`kind`, `title`) and an optional `focus` (0 = keep the top of a tall photo, 1 = keep the bottom) |
-| Next event (`NEXT_EVENT`) | `assets/img/` + `assets/video/` | Title, venue, city, ISO date (drives the countdown), ticket link. The section is a record: `sleeve` is the photo on the sleeve, `film` plays on the picture disc once the arm drops |
+| Entry film (`SLIDES`) | `assets/video/` | The hero film, full screen: it breaks through with a slit-scan and then plays on a loop. It has a small label (`kind`, `title`) and its crop follows the DJ (`FOCUS`). Adding more shots to the list turns it back into a slideshow with slit-scan cuts |
+| Intro (`INTRO.lines`) | — | Words only, no images: his sentence split into phrases. On a blank page they appear one by one as you scroll, alternating left and right down the page, until the whole sentence stands. Change, add or remove phrases freely |
+| Next event (`NEXT_EVENT`) | `assets/img/` + `assets/video/` | Title, venue, city, ISO date (drives the countdown), ticket link. The section is a record on the white page: `sleeve` is the photo on the sleeve, `film` plays on the picture disc once the arm drops |
 | The Sound chapters (`CHAPTERS[].media` + `sides`) | `assets/video/` | Vertical clips, 8–12 s. `media` is the main film (the only one on phones); `sides: [left, right]` turn the chapter into a 3-camera wall on wide screens |
 | Footer wordmark (`FOOTER_FILM`) | `assets/video/` | Any clip; it plays inside the giant NORTHSOUL letters |
-| Past events (`EVENTS[].media`) | `assets/img/` or `assets/video/` | Any orientation, at least 1200 px. A curved carousel on a dark stage under the `ARCHIVE` headline. It turns sideways only (swipe, drag, Shift + wheel, arrow keys, the ← → buttons), so scrolling down the page passes straight through. A film plays, with its sound, while the mouse is over it (on phones: tap to play, tap again to stop). Films are shown whole |
+| Past events (`EVENTS[].media`) | `assets/img/` or `assets/video/` | Any orientation, at least 1200 px. A curved carousel of big cards on the white page, under the `ARCHIVE` headline. It turns sideways only (swipe, drag, Shift + wheel, arrow keys, the ← → buttons), so scrolling down the page passes straight through. While the section is in view the films play on their own: the front one (with its sound, once the visitor has clicked anywhere) and, on wide screens, its two neighbours. Films are shown whole |
 | Press kit (`PRESS`) | `assets/press/` | `photos/` holds the original camera files at full resolution (camera metadata removed, image data untouched). The page shows only the download button; on click the browser bundles the photos with `NORTHSOUL-bio.txt` into `NORTHSOUL-press-kit.zip` (stored as they are, no recompression). No zip is kept in the repo, since GitHub refuses files over 100 MB. If you add photos, add them to `PRESS.photos` and update `PRESS.zip.meta` |
 | Trusted by (`TRUSTED`) | `assets/img/venues/` | Venue logos as black marks on a transparent background (PNG, or SVG if the venue has one). A venue without a usable logo can be set as text with `type` |
 | Booking (`CONTACT`) | — | No form: `email`, `phone` (+ `phoneLabel`) drive the Email, WhatsApp and Call lines. The email opens with a ready-made enquiry template |
@@ -42,11 +43,11 @@ media: { video: 'assets/video/club-night.mp4', img: 'assets/img/club-night.jpg' 
 
 ### Quality and full framing
 
-- **Photos** exist three times: `assets/img/full/` (3840 px, JPEG q92) for the artist portrait and the full-screen viewer on screens that can show it, `assets/img/` (1600 px, q90) for the slideshow and most places, and `assets/img/thumb/` (800 px) for small tiles (intro collage, menu ring, frames grid). A browser keeps every image in memory at its full size, so small tiles get small files; that keeps phones from running out of memory.
+- **Photos** exist three times: `assets/img/full/` (3840 px, JPEG q92) for the artist portrait and the full-screen viewer on screens that can show it, `assets/img/` (1600 px, q90) for the slideshow and most places, and `assets/img/thumb/` (800 px) for small tiles (menu ring, frames grid). A browser keeps every image in memory at its full size, so small tiles get small files; that keeps phones from running out of memory.
 - **Clips** are H.264 at native frame rate in two sizes (`clip()` in `js/content.js` picks between them):
   `assets/video/` 1080p (CRF 20, at most 8 Mb/s) for the big films on desktop, and
   `assets/video/720/` (CRF 22, at most 3 Mb/s) for phones and The Sound's side cameras (these exist only in 720p).
-  Posters have 640 px copies in `assets/video/posters/thumb/`; the intro collage shows clips as these stills.
+  Posters have 640 px copies in `assets/video/posters/thumb/`, used as The Sound's stills while its films start.
 - **Loading and smoothness:** nothing waits for the network. The entry opens as soon as the first still has arrived; each section's films start downloading one screen before you reach it, play only while visible, and never start several at the same instant (a film's first start costs the browser a moment).
 - **Full screen, framed on the DJ.** Photos and clips fill their frames; the crop follows the DJ using `FOCUS` at the top of `js/content.js` (his position in each file, 0–1 from the top-left). Past Events is the exception: the open night shows its whole video. When you add a file, add its size to `DIMS` and the DJ's position to `FOCUS`.
 - **Encoding a new clip** (keep the sound with `-c:a aac -b:a 192k`, or drop it with `-an`):

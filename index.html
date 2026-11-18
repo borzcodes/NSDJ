@@ -69,13 +69,10 @@
     </section>
 
     <!-- ===================== INTRO / CASCADE ===================== -->
-    <section class="intro" id="intro">
+    <section class="intro" id="intro" aria-label="The story">
       <div class="intro__sticky">
-        <div class="cascade" id="cascade" aria-hidden="true"><div class="cascade__field" id="cascadeField"></div></div>
-        <div class="intro__copy">
-          <p class="intro__text" id="introText"></p>
-          <a class="pill" id="introLink" href="#artist"><span></span><i class="pill__icon">+</i></a>
-        </div>
+        <p class="story" id="story"></p>
+        <a class="story__link mono" id="introLink" href="#artist"></a>
       </div>
     </section>
 
@@ -106,11 +103,10 @@
 
     <!-- ===================== PAST EVENTS: a curved carousel of the nights, turned by the scroll ===================== -->
     <section class="flow" id="archive" aria-label="Past events">
-      <div class="flow__stage on-dark">
+      <div class="flow__stage">
         <header class="flow__head">
           <h2 class="flow__title" id="flowTitle"></h2>
           <p class="flow__sub" id="flowSub"></p>
-          <p class="flow__note mono"><i></i><span id="flowNote"></span></p>
         </header>
         <div class="flow__ring" id="flowRing"></div>
         <div class="flow__nav mono">
@@ -123,7 +119,7 @@
 
     <!-- ===================== NEXT EVENT ===================== -->
     <!-- the next night is a record: it slides out of its sleeve, the arm drops, the film plays on the disc -->
-    <section class="next on-dark" id="next" aria-label="Next event">
+    <section class="next" id="next" aria-label="Next event">
       <div class="next__stage">
         <div class="next__top mono"><span class="next__now" id="nextNow">Cueing up</span><span id="nextCity"></span></div>
 

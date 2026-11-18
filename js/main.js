@@ -2,7 +2,7 @@
    NORTHSOUL — main
    ========================================================================== */
 import {
-  SITE, SPLASH, SLIDES, HERO, INTRO, CASCADE, ARTIST, CHAPTERS, ARCHIVE, EVENTS, NEXT_EVENT,
+  SITE, SPLASH, SLIDES, HERO, INTRO, ARTIST, CHAPTERS, ARCHIVE, EVENTS, NEXT_EVENT,
   FRAMES, PRESS, TRUSTED, CONTACT, MENU_TILES, FOOTER_FILM,
 } from './content.js';
 import { placeholder, copyCanvas } from './placeholder.js';
@@ -133,7 +133,7 @@ let lenis;
 const S = {
   mouse: { x: innerWidth / 2, y: innerHeight / 2, nx: 0.5, ny: 0.5 },
   hero: { active: true, slides: null },
-  intro: { active: false, tiles: [], p: 0, rx: 0, ry: 0 },
+  intro: { phrases: [], count: 0 },
   sound: { active: false, liquid: null, target: 0, g: 0, cur: -1 },
   archive: { cards: [], target: 0, cur: 0, front: -1, active: false },
   next: { videos: [], date: null },
@@ -155,10 +155,8 @@ const audible = () => (navigator.userActivation ? navigator.userActivation.hasBe
 function hearFilms() {
   if (!navigator.userActivation) heard = true;
   if (!audible()) return;      // a swipe to scroll is not a tap: wait for a real one
-  // Safari lets a film be unmuted later (on hover, on scroll) only if it was once unmuted inside a click or tap
+  // Safari lets a film be unmuted later (as you scroll) only if it was once unmuted inside a click or tap
   voices.forEach(v => { if (v.muted) { v.muted = false; v.muted = true; } });
-  const p = S.archive.playing?.video;
-  if (p) p.muted = false;      // the film under the mouse is heard straight away
 }
 ['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, hearFilms, { capture: true, passive: true }));
 // a hidden tab goes quiet
@@ -286,7 +284,14 @@ async function buildHero() {
   [...SITE.artist].forEach(ch => { const o = el('span', 'ch'); const i = el('span', 'ci', ch); i.style.display = 'inline-block'; o.append(i); word.append(o); });
 
   const mf = $('#manifesto');
-  HERO.manifesto.forEach(line => {
+  // on phones each line breaks in two (at the word nearest its middle), so the sentence can be set large
+  const halves = s => {
+    const w = s.split(' ');
+    let best = 1;
+    for (let i = 2; i < w.length; i++) if (Math.abs(w.slice(0, i).join(' ').length - s.length / 2) < Math.abs(w.slice(0, best).join(' ').length - s.length / 2)) best = i;
+    return [w.slice(0, best).join(' '), w.slice(best).join(' ')];
+  };
+  (mobile() ? HERO.manifesto.flatMap(halves) : HERO.manifesto).forEach(line => {
     const L = el('span', 'mf-line');
     L.style.position = 'relative';
     const inn = el('span');
@@ -310,33 +315,18 @@ function setSlideLabel(i) {
 /* ==========================================================================
    BUILDERS
    ========================================================================== */
-async function buildIntro() {
-  $('#introText').append(el('span', null, INTRO.text));
+/* ---------- INTRO: just the words — the sentence, one phrase per line of the page ---------- */
+function buildIntro() {
+  const story = $('#story');
+  INTRO.lines.forEach((text, i) => {
+    const p = el('span', 'story__phrase', i < INTRO.lines.length - 1 ? text + ' ' : text);
+    p.style.gridRow = i + 1;          // each phrase on its own line of the page, alternating sides
+    story.append(p);
+    S.intro.phrases.push(p);
+  });
   const link = $('#introLink');
   link.href = INTRO.link.href;
-  link.querySelector('span').textContent = INTRO.link.label;
-
-  const field = $('#cascadeField');
-  const pool = CASCADE.length ? CASCADE : [...EVENTS.map(e => e.media), ...FRAMES.map(f => f.media)];
-  const N = mobile() ? 18 : Math.min(pool.length, 24);
-  const rnd = mulberry(4);
-  for (let i = 0; i < N; i++) {
-    const m = pool[i % pool.length];
-    // the tiles are small and fly past, so a clip shows its still here: a dozen films starting together
-    // as the collage comes in made the scroll stutter (and phones can only decode a few at once)
-    const r = await resolve(m.video ? { img: m.thumb || m.img, w: m.w, h: m.h, fx: m.fx, fy: m.fy } : m, 480, 640, 'small');
-    const t = el('div', 'cas-tile');
-    const node = mediaNode(r);
-    node.loading = 'lazy';
-    t.append(node);
-    field.append(t);
-    const u = i / (N - 1);
-    let x = lerp(-1.2, 1.2, rnd()) * 0.5;
-    let y = (x * 0.5) + (rnd() - 0.5) * 0.6;
-    if (Math.abs(x) < 0.18 && Math.abs(y) < 0.16) x += Math.sign(x || 1) * 0.24;
-    const ar = m.video ? 9 / 16 : 2 / 3;
-    S.intro.tiles.push({ el: t, x, y, ar, z0: lerp(-3800, 300, (u + rnd() * 0.1) % 1), w: lerp(140, 250, rnd()) });
-  }
+  link.textContent = INTRO.link.label;
 }
 
 async function buildArtist() {
@@ -410,8 +400,6 @@ async function buildArchive() {
   const A = S.archive, ring = $('#flowRing');
   $('#flowTitle').textContent = ARCHIVE.title;
   $('#flowSub').textContent = ARCHIVE.sub;
-  const [k, v] = ARCHIVE.note;
-  $('#flowNote').innerHTML = `<b>${k}</b> · ${v}`;
   for (const [i, ev] of EVENTS.entries()) {
     const r = await resolve(ev.media, 900, 1600);
     const tag = [ev.tag, ev.date].filter(Boolean).join(' · ');
@@ -736,13 +724,8 @@ function heroScene() {
     .to(st, { k: 1, duration: 0.5, ease: 'power3.inOut', onUpdate: apply }, 0.08)
     .from('.mf-line > span', { yPercent: 115, stagger: 0.05, duration: 0.24, ease: 'power3.out' }, 0.3)
     .from('#kicker', { opacity: 0, y: 24, duration: 0.14 }, 0.6)
-    .to({}, { duration: 0.18 })
-    // dive back through the slot: the sentence flies past the camera, the film opens to full screen
-    .addLabel('out')
-    .to('#kicker', { opacity: 0, duration: 0.1 }, 'out')
-    .to('#manifesto', { scale: 3.4, opacity: 0, duration: 0.45, ease: 'power2.in' }, 'out')
-    .to(st, { k: 0, duration: 0.5, ease: 'power3.inOut', onUpdate: apply }, 'out')
-    .to({}, { duration: 0.12 });
+    // the sentence holds a moment with the film inside it, then the page simply scrolls on to the artist
+    .to({}, { duration: 0.18 });
 
   ScrollTrigger.create({
     trigger: '.hero', start: 'top bottom', end: 'bottom top',
@@ -750,38 +733,24 @@ function heroScene() {
   });
 }
 
+/**
+ * INTRO — the page holds still while the sentence assembles on it, one phrase per stretch of scroll.
+ * The first phrase is there as you arrive; the whole sentence holds for a moment at the end.
+ * Scrolling back takes the phrases away again.
+ */
 function introScene() {
+  const I = S.intro, N = I.phrases.length, link = $('#introLink');
+  const show = count => {
+    if (count === I.count) return;
+    I.count = count;
+    I.phrases.forEach((p, i) => p.classList.toggle('is-on', i < count));
+    link.classList.toggle('is-on', count === N);
+  };
+  show(1);
   ScrollTrigger.create({
-    trigger: '#intro', start: 'top bottom', end: 'bottom top',
-    onToggle: s => { S.intro.active = s.isActive; },
-    onUpdate: s => (S.intro.p = s.progress),
+    trigger: '#intro', start: 'top top', end: 'bottom bottom',
+    onUpdate: st => show(Math.min(N, 1 + Math.floor(st.progress * (N + 1)))),
   });
-  // signature: a highlighter — the white bands sweep across first, then the ink settles into them
-  gsap.timeline({ scrollTrigger: { trigger: '#intro', start: 'top 30%' } })
-    .fromTo('#introText span', { '--band': '0%', '--ink': 0 }, { '--band': '100%', duration: 1.1, ease: 'power3.inOut' }, 0)
-    .to('#introText span', { '--ink': 1, duration: 0.9, ease: 'power2.out' }, 0.75)
-    .fromTo('#introLink', { opacity: 0 }, { opacity: 1, duration: 0.9 }, 0.3);
-}
-
-function updateIntro() {
-  const I = S.intro;
-  I.rx += ((S.mouse.ny - 0.5) * -5 - I.rx) * 0.05;
-  I.ry += ((S.mouse.nx - 0.5) * 7 - I.ry) * 0.05;
-  $('#cascadeField').style.transform = `rotateX(${I.rx}deg) rotateY(${I.ry}deg)`;
-  const vw = innerWidth, vh = innerHeight, sc = clamp(vw / 1440, 0.6, 1.3);
-  const travel = I.p * 4100;
-  for (const t of I.tiles) {
-    const z = t.z0 + travel;
-    const op = clamp((z + 4000) / 900, 0, 1) * clamp((700 - z) / 400, 0, 1);
-    t.el.style.opacity = op;
-    t.el.style.transform = `translate3d(${t.x * vw}px, ${t.y * vh}px, ${z}px)`;
-    if (t.sc !== sc) {
-      const w = t.w * sc, h = w / t.ar;
-      Object.assign(t.el.style, { width: w + 'px', height: h + 'px', marginLeft: -w / 2 + 'px', marginTop: -h / 2 + 'px' });
-      t.sc = sc;
-    }
-    t.el.style.visibility = op <= 0 ? 'hidden' : 'visible';
-  }
 }
 
 function artistScene() {
@@ -900,18 +869,20 @@ function updateSound(time) {
 /**
  * PAST EVENTS — the ring. It turns sideways only (swipe, drag, Shift + wheel, arrow keys or the
  * arrow buttons), so scrolling down the page simply carries on past it. The front card faces you;
- * the others turn in towards it, step back and fall into the dark. A film plays only under the mouse.
+ * the others turn in towards it, step back and fade into the page. The films play on their own.
  */
 function archiveScene() {
   const A = S.archive, N = A.cards.length, ring = $('#flowRing'), sec = $('#archive');
   if (!N) return;
-  A.target = 0; A.cur = 0; A.front = -1;
+  A.target = 0; A.cur = 0; A.front = -1; A.sec = sec;
   ScrollTrigger.create({
     trigger: sec, start: 'top bottom', end: 'bottom top',
-    onToggle: s => { A.active = s.isActive; if (!s.isActive) { A.cards.forEach(c => c.video?.pause()); A.playing = null; A.front = -1; } },
+    onToggle: s => {
+      A.active = s.isActive;
+      if (!s.isActive) { A.cards.forEach(c => { if (c.video) { c.video.pause(); c.video.muted = true; c.vol = 0; } }); A.front = -1; }
+    },
   });
-  ScrollTrigger.create({ trigger: sec, start: 'top top+=40', end: 'bottom top+=40', onToggle: s => setDarkZone('archive', s.isActive) });
-  // one screen before the section arrives, the films at the front start loading, so a hover plays at once
+  // one screen before the section arrives, the films at the front start loading, so they play as soon as you're here
   ScrollTrigger.create({
     trigger: sec, start: 'top bottom+=100%', once: true,
     onEnter: () => A.cards.slice(0, 3).forEach((c, i) => setTimeout(() => { if (c.video) c.video.preload = 'auto'; }, i * 200)),
@@ -945,9 +916,9 @@ function archiveScene() {
     clearTimeout(wheelT);
     wheelT = setTimeout(() => { land(wheelFrom); wheelFrom = null; }, 140);   // the gesture has ended
   }, { passive: false });
-  // size: the cards fill the space under the headline, a little smaller on narrow screens
+  // size: big — the front card fills most of the ring's screen (on phones, most of the width)
   const measure = () => {
-    const h = ring.clientHeight, cw = Math.min(h * 0.84 * 0.5625, innerWidth * (mobile() ? 0.56 : 0.24));
+    const h = ring.clientHeight, cw = Math.min(h * 0.9 * 0.5625, innerWidth * (mobile() ? 0.72 : 0.3));
     ring.style.setProperty('--cw', `${Math.round(cw)}px`);
     A.cw = cw;
   };
@@ -972,25 +943,9 @@ function archiveScene() {
   addEventListener('pointerup', release);
   addEventListener('pointercancel', release);
 
-  // the films are not clickable: hovering one plays it, with sound; moving off stops it.
-  // (phones have no hover, so there a tap starts a film and a second tap stops it)
-  const hear = c => {
-    const v = c.video;
-    if (!v) return;
-    if (A.playing && A.playing !== c) stop(A.playing);
-    A.playing = c;
-    v.volume = 1;
-    v.muted = !audible();
-    v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });   // sound refused: play it silently
-  };
-  const stop = c => { if (!c?.video) return; c.video.pause(); c.video.muted = true; if (A.playing === c) A.playing = null; };
-  A.cards.forEach(c => {
-    if (c.video) voices.add(c.video);
-    c.el.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse' && !down) hear(c); });
-    c.el.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') stop(c); });
-    c.el.addEventListener('pointerup', e => { if (e.pointerType !== 'mouse' && moved <= 6) (A.playing === c ? stop(c) : hear(c)); });
-  });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) stop(A.playing); });
+  // the films play on their own (see updateArchive); the one in front is heard
+  A.cards.forEach(c => { if (c.video) { voices.add(c.video); c.vol = 0; } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) A.cards.forEach(c => c.video?.pause()); });
 }
 
 /** one frame of the ring */
@@ -1012,14 +967,37 @@ function updateArchive(dt) {
     c.el.style.zIndex = String(100 - Math.round(ad * 10));
     c.el.style.setProperty('--c', clamp(1 - ad * 1.4, 0, 1).toFixed(3));
   });
-  // nothing plays on its own; the cards near the front buffer so a hover starts straight away
   const front = clamp(Math.round(shown), 0, N - 1);
   if (front !== A.front) {
     A.front = front;
-    // one after another: a film's first load costs the page a moment
+    // the cards near the front buffer ahead, one after another (a film's first load costs the page a moment)
     A.cards.filter((c, i) => c.video && c.video.preload !== 'auto' && Math.abs(i - front) <= 2)
       .forEach((c, i) => setTimeout(() => { c.video.preload = 'auto'; }, i * 200));
   }
+
+  // The films play on their own while you're here: the one in front, and on wide screens its two neighbours
+  // (big and in sight). Starts are spaced out, front first. The front film is heard (once the visitor has
+  // clicked anywhere: a browser rule), fading with the section and crossfading as the ring turns.
+  const now = performance.now(), wide = !mobile(), frontV = A.cards[front].video;
+  let gain = 0;
+  if (audible() && !document.hidden) {
+    const r = A.sec.getBoundingClientRect();
+    gain = clamp((Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / innerHeight, 0, 1);
+  }
+  const k = 1 - Math.exp(-dt * 6);
+  A.cards.forEach((c, i) => {
+    const v = c.video;
+    if (!v) return;
+    const want = i === front || (wide && Math.abs(i - front) === 1);
+    if (want) {
+      const turn = i === front || !frontV || !frontV.paused;
+      if (v.paused && turn && now - (A.lastStart || 0) > 150) { A.lastStart = now; v.play().catch(() => {}); }
+    } else if (!v.paused) v.pause();
+    c.vol += ((i === front ? gain : 0) - c.vol) * k;
+    const mute = c.vol < 0.01 || v.paused;
+    if (v.muted !== mute) v.muted = mute;
+    if (!mute && Math.abs(v.volume - c.vol) > 0.01) v.volume = Math.min(1, c.vol);
+  });
 }
 
 function nextScene() {
@@ -1034,10 +1012,9 @@ function nextScene() {
     S.next.videos.forEach(v => (on ? v.play().catch(() => {}) : v.pause()));
   };
   ScrollTrigger.create({ trigger: sec, start: 'top bottom', end: 'bottom top', onToggle: s => { inView = s.isActive; if (!inView) setPlaying(false); } });
-  ScrollTrigger.create({ trigger: sec, start: 'top top+=40', end: 'bottom top+=40', onToggle: s => setDarkZone('next', s.isActive) });
 
   // the record comes out of its sleeve, spinning; then the arm swings over and drops onto it
-  const travel = () => $('#deck').offsetHeight * (mobile() ? 0.76 : 0.78);
+  const travel = () => $('#deck').offsetHeight * (mobile() ? 0.6 : 0.78);   // on phones the record comes 60% out, so it can be bigger
   const tl = gsap.timeline({
     defaults: { ease: 'none' },
     scrollTrigger: {
@@ -1267,11 +1244,6 @@ function makeGrain() {
   $('.grain').style.setProperty('--grain', `url(${c.toDataURL()})`);
 }
 
-function mulberry(seed) {
-  let a = seed >>> 0;
-  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-}
-
 /* ==========================================================================
    MAIN LOOP
    ========================================================================== */
@@ -1286,7 +1258,6 @@ function loop() {
 
     const sl = S.hero.slides;
     if (sl && S.hero.active) { sl.beat = sound.kick; sl.update(dt); sl.render(time); }
-    if (S.intro.active) updateIntro();
     if (S.archive.active) updateArchive(dt);
     if (S.sound.active) updateSound(time);
     else if (S.sound.stillsDue) S.sound.stillsDue = !S.sound.liquid.uploadStills();   // approaching: stills go up one per frame
